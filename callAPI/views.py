@@ -6,7 +6,6 @@ from django.shortcuts import get_object_or_404
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.conf import settings
-from openai import OpenAI
 import requests
 from twilio.rest import Client
 from twilio.twiml.voice_response import VoiceResponse, Gather
@@ -17,9 +16,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Set your OpenAI API key
-OpenAI_API_KEY = settings.OPENAI_API_KEY
-# client = OpenAI.api_key = (OpenAI_API_KEY)
-openai.api_key = OpenAI_API_KEY
+OPENAI_API_KEY= settings.OPENAI_API_KEY
+openai.api_key = OPENAI_API_KEY
 # Initialize Twilio client
 twilio_client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
 
@@ -46,7 +44,7 @@ def make_call(request):
         )
         print("New call obg creadted")
         # Use PUBLIC_URL from environment for a publicly accessible callback URL.
-        # public_url = "https://cec7-94-188-131-83.ngrok-free.app"
+        # public_url = "https://d650-94-188-131-83.ngrok-free.app"
         public_url = "https://web-production-7204.up.railway.app"
         if public_url:
             callback_url = f'{public_url}/api/call/{call_obj.id}/twiml/'
@@ -85,6 +83,7 @@ def call_twiml(request, call_id):
     Generate TwiML for the ongoing call. Process the caller's speech with OpenAI,
     convert the AI response to audio using GPT-4o-Audio-Preview, and play the audio.
     """
+    # public_url = "https://d650-94-188-131-83.ngrok-free.app"
     public_url = "https://web-production-7204.up.railway.app"
     call_obj = get_object_or_404(Call, id=call_id)
     response = VoiceResponse()
@@ -143,16 +142,8 @@ def call_twiml(request, call_id):
             # Save the audio file to MEDIA_ROOT
             tts_completion.stream_to_file(audio_filepath)
             try:
-                upload_url = "https://uguu.se/upload.php"
-                files = {'file': open(audio_filepath, 'rb')}
-                response = requests.post(upload_url, files=files,verify=False)
+                audio_url = f'{public_url}{settings.MEDIA_URL}{audio_filename}'
 
-                if response.status_code == 200:
-                    public_url = response.text.strip()
-                    print("Public URL: %s" % public_url)
-                    audio_url = public_url
-                else:
-                    print(f"Error uploading to uguu.se. Status code: {response.status_code}, Response: {response.text}")
             except Exception as e:
                 print(f"An error occurred during file upload: {e}")
                 
@@ -175,8 +166,9 @@ def call_twiml(request, call_id):
     
     # Set up a <Gather> to capture further speech input
     gather = Gather(input='speech',language='he-IL', action=request.build_absolute_uri(), timeout=3)
-    gather.say("אנא אמור משהו אחרי הצפצוף.", voice=call_obj.voice)
+    gather.say("HEY",voice=call_obj.voice)
     response.append(gather)
+    
     
     # Redirect to the same URL if no input is captured.
     response.redirect(request.build_absolute_uri())
