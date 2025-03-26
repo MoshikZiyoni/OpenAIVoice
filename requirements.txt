@@ -9,3 +9,4 @@ celery==5.3.4
 redis==5.0.1
 whitenoise==6.9.0
 django-cors-headers==4.7.0
+gunicorn==21.2.0
