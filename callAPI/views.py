@@ -85,7 +85,7 @@ def call_twiml(request, call_id):
     Generate TwiML for the ongoing call. Process the caller's speech with OpenAI,
     convert the AI response to audio using GPT-4o-Audio-Preview, and play the audio.
     """
-    public_url = "https://cec7-94-188-131-83.ngrok-free.app"
+    public_url = "https://web-production-7204.up.railway.app"
     call_obj = get_object_or_404(Call, id=call_id)
     response = VoiceResponse()
     
