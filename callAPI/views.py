@@ -121,14 +121,6 @@ def call_twiml(request, call_id):
         
         # Use GPT-4o-Audio-Preview to generate TTS audio for the AI response
         try:
-            # tts_completion = openai.chat.completions.create(
-            #     model="gpt-4o-audio-preview",
-            #     modalities=["text", "audio"],
-            #     audio={"voice": "alloy", "format": "wav"},
-            #     messages=[
-            #         {"role": "user", "content": ai_response}
-            #     ]
-            # )
             
             tts_completion = openai.audio.speech.create(
             model="gpt-4o-mini-tts",
@@ -136,11 +128,13 @@ def call_twiml(request, call_id):
             input = ai_response)
             # Define the filename and file path
             audio_filename = f"tts_{call_obj.id}.wav"
-            
+            if not os.path.exists(settings.MEDIA_ROOT):
+                os.makedirs(settings.MEDIA_ROOT)
             audio_filepath = os.path.join(settings.MEDIA_ROOT, audio_filename)
             
             # Save the audio file to MEDIA_ROOT
             tts_completion.stream_to_file(audio_filepath)
+            print("audio_filepath: ", audio_filepath)
             try:
                 audio_url = f'{public_url}{settings.MEDIA_URL}{audio_filename}'
 
