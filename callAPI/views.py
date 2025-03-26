@@ -58,10 +58,9 @@ def make_call(request):
         # Initiate the outbound call using Twilio
         try:
             
-            return
             twilio_call = twilio_client.calls.create(
                 to=phone_number,
-                from_=TWILIO_PHONE_NUMBER,
+                from_=TWILIO_PHONE_NUMBER_NEW,
                 url=callback_url,
                 status_callback=status_callback_url,
                 status_callback_event=['completed', 'failed']

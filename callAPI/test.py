@@ -19,7 +19,6 @@ from twilio.rest import Client
 # BASE_DIR = Path(__file__).resolve().parent.parent
 
 # # client = OpenAI.api_key = (OpenAI_API_KEY)
-# openai.api_key = ('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')
 # # Initialize Twilio client
 
 # try:
