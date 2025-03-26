@@ -44,9 +44,10 @@ def make_call(request):
             phone_number=phone_number,
             caller_id=settings.TWILIO_PHONE_NUMBER_NEW
         )
-        
+        print("New call obg creadted")
         # Use PUBLIC_URL from environment for a publicly accessible callback URL.
-        public_url = "https://cec7-94-188-131-83.ngrok-free.app"
+        # public_url = "https://cec7-94-188-131-83.ngrok-free.app"
+        public_url = "https://web-production-7204.up.railway.app"
         if public_url:
             callback_url = f'{public_url}/api/call/{call_obj.id}/twiml/'
             status_callback_url = f'{public_url}/api/call/{call_obj.id}/status/'
@@ -54,7 +55,7 @@ def make_call(request):
             # Fallback: This will work only if your server is publicly accessible.
             callback_url = request.build_absolute_uri(f'/api/call/{call_obj.id}/twiml/')
             status_callback_url = request.build_absolute_uri(f'/api/call/{call_obj.id}/status/')
-        
+        print("Start calling")
         # Initiate the outbound call using Twilio
         try:
             
