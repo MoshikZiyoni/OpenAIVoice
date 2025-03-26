@@ -1,0 +1,7 @@
+{
+    "python.testing.pytestArgs": [
+        "OpenAIVoice"
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true
+}
