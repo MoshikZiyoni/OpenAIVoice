@@ -34,7 +34,7 @@ WORKDIR /code
 COPY ./callAPI /code/callAPI
 COPY ./OpenAIVoice /code/OpenAIVoice
 COPY ./manage.py /code/
-COPY build.sh /code/
+# COPY build.sh /code/
 
 # Collect static files
 RUN python manage.py collectstatic --noinput
