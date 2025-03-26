@@ -5,23 +5,6 @@ FROM python:3.10.11
 ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONUNBUFFERED 1
 
-# # Install system dependencies
-# RUN apt-get update \
-#     && apt-get install -y \
-#         autoconf \
-#         automake \
-#         build-essential \
-#         ca-certificates \
-#         g++ \
-#         git \
-#         libtool \
-#         libleptonica-dev \
-#         pkg-config \
-#         libtiff5-dev \
-#         zlib1g-dev \
-#     && apt-get clean
-
-
 
 # Install Python dependencies (this step will be cached if requirements.txt doesn't change)
 COPY requirements.txt /code/requirements.txt
@@ -34,7 +17,6 @@ WORKDIR /code
 COPY ./callAPI /code/callAPI
 COPY ./OpenAIVoice /code/OpenAIVoice
 COPY ./manage.py /code/
-# COPY build.sh /code/
 
 # Collect static files
 RUN python manage.py collectstatic --noinput
