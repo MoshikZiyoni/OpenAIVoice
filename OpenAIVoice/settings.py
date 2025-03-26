@@ -12,7 +12,6 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 
 import os
 from pathlib import Path
-from urllib.parse import urlparse
 from dotenv import load_dotenv
 load_dotenv()
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -118,16 +117,19 @@ ASGI_APPLICATION_OPTIONS = {
 #         'NAME': BASE_DIR / 'db.sqlite3',
 #     }
 # }
-tmpPostgres = urlparse(os.getenv("DATABASE_URL"))
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': tmpPostgres.path.replace('/', ''),
-        'USER': tmpPostgres.username,
-        'PASSWORD': tmpPostgres.password,
-        'HOST': tmpPostgres.hostname,
-        'PORT': 5432,
-    }
+        'NAME': os.environ.get('PGDATABASE'),
+        'HOST': os.environ.get('PGHOST'),
+        'USER': os.environ.get('PGUSER'),
+        'PASSWORD': os.environ.get('PGPASSWORD'),
+        'PORT': '5432',
+        # Add the endpoint ID as an option in the database URL
+        'OPTIONS': {
+            'options': f'endpoint={os.environ.get("PGENDPOINT")}'  # Replace "PGENDPOINT" with your actual environment variable name
+        }
+        }
 }
 
 
