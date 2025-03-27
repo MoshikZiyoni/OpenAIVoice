@@ -58,23 +58,23 @@ def make_call(request):
         if not os.path.exists(settings.MEDIA_ROOT):
             os.makedirs(settings.MEDIA_ROOT, exist_ok=True)  # Safe creation
 
-        try:
-            tts_completion = openai.audio.speech.create(
-                model="gpt-4o-mini-tts",
-                voice="alloy",  # Optionally remove if you prefer the default voice.
-                instructions=(
-                    "Speak in Hebrew with a warm, upbeat, and reassuring tone. Use a natural Israeli accent "
-                    "with clear, precise pronunciation. Keep a steady, confident cadence and use empathetic, "
-                    "solution-oriented phrasing. Focus on positive language and next steps."
-                ),
-                input="היי אני העוזר הוירטואלי של מושיק"
-            )
-            welcome_audio_filename = f"tts'_welcome_{call_obj.id}.mp3"
-            audio_filepath = os.path.join(settings.MEDIA_ROOT, welcome_audio_filename)
-            tts_completion.stream_to_file(audio_filepath)
+        # try:
+        #     tts_completion = openai.audio.speech.create(
+        #         model="gpt-4o-mini-tts",
+        #         voice="alloy",  # Optionally remove if you prefer the default voice.
+        #         instructions=(
+        #             "Speak in Hebrew with a warm, upbeat, and reassuring tone. Use a natural Israeli accent "
+        #             "with clear, precise pronunciation. Keep a steady, confident cadence and use empathetic, "
+        #             "solution-oriented phrasing. Focus on positive language and next steps."
+        #         ),
+        #         input="היי אני העוזר הוירטואלי של מושיק"
+        #     )
+        #     welcome_audio_filename = f"tts'_welcome_{call_obj.id}.mp3"
+        #     audio_filepath = os.path.join(settings.MEDIA_ROOT, welcome_audio_filename)
+        #     tts_completion.stream_to_file(audio_filepath)
             
-        except Exception as e:
-            print("TTS error:", e)
+        # except Exception as e:
+        #     print("TTS error:", e)
         import shutil
 
         # Ensure ummm.mp3 exists in MEDIA_ROOT
@@ -159,7 +159,7 @@ def call_twiml(request, call_id):
         # Optionally, you could store or process the partial speech here.
     try:
         ummm_audio_filename = "ummm.mp3"
-        ummm_audio_url = f'{public_url}{settings.MEDIA_URL}{ummm_audio_filename}'
+        ummm_audio_url = f'{public_url}/media/{ummm_audio_filename}'
         # Play the audio if available; otherwise, say the text.
         if ummm_audio_url:
             response.play(ummm_audio_url)
@@ -234,8 +234,8 @@ def call_twiml(request, call_id):
         response.pause(length=1.5)
         try:
             # welcome_audio_filename = f"tts'_welcome_{call_obj.id}.mp3"
-            welcome_audio_filename = f"Hey.mp3"
-            welcome_audio_url = f'{public_url}{settings.MEDIA_URL}{welcome_audio_filename}'
+            welcome_audio_filename = "Hey.mp3"
+            welcome_audio_url = f'{public_url}/media/{welcome_audio_filename}'
             # Play the audio if available; otherwise, say the text.
             if welcome_audio_url:
                 response.play(welcome_audio_url)
