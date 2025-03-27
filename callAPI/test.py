@@ -21,18 +21,8 @@
 #     print("Error with gpt-3.5", e)
 
 import os
-from .models import MediaFile
-
+import requests
 # Define the full path to the file
-file_path = r'C:\Users\MoshikZiyoni\OpenAIVoice\OpenAIVoice\media\Hey.mp3'
-
-# Check if the file exists
-if os.path.exists(file_path):
-    # Open the file in binary mode
-    with open(file_path, 'rb') as file:
-        # Create a MediaFile instance and save it to the database
-        media_file = MediaFile.objects.create(name='Hey.mp3', file='media/Hey.mp3')
-        media_file.save()
-        print("File saved to the database:", media_file)
-else:
-    print("File does not exist at:", file_path)
+hey_audio_url='https://web-production-7204.up.railway.app/media/Hey.mp3'
+response = requests.get(hey_audio_url)
+print(response.status_code)
