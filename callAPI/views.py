@@ -58,13 +58,13 @@ def make_call(request):
         if not os.path.exists(settings.MEDIA_ROOT):
             os.makedirs(settings.MEDIA_ROOT, exist_ok=True)  # Safe creation
 
-        hey_file_path = os.path.join(settings.MEDIA_ROOT, 'Hey.mp3')
+        # hey_file_path = os.path.join(settings.MEDIA_ROOT, 'Hey.mp3')
 
-        # Check if Hey.mp3 exists
-        if not os.path.exists(hey_file_path):
-            print("Hey.mp3 file does not exist at:", hey_file_path)
-        else:
-            print("Hey.mp3 file exists at:", hey_file_path)
+        # # Check if Hey.mp3 exists
+        # if not os.path.exists(hey_file_path):
+        #     print("Hey.mp3 file does not exist at:", hey_file_path)
+        # else:
+        #     print("Hey.mp3 file exists at:", hey_file_path)
         if os.path.exists(settings.MEDIA_ROOT):
             print("Files in MEDIA_ROOT:")
             for file_name in os.listdir(settings.MEDIA_ROOT):
@@ -155,8 +155,6 @@ def call_twiml(request, call_id):
                 input=ai_response
             )
             audio_filename = f"tts_{call_obj.id}.mp3"
-            if not os.path.exists(settings.MEDIA_ROOT):
-                os.makedirs(settings.MEDIA_ROOT)
             audio_filepath = os.path.join(settings.MEDIA_ROOT, audio_filename)
             
             tts_completion.stream_to_file(audio_filepath)
@@ -180,7 +178,9 @@ def call_twiml(request, call_id):
         try:
             hey_audio_url = f'{public_url}{settings.MEDIA_URL}Hey.mp3'
             response.play(hey_audio_url)
+            print("Suceess with Hey")
         except:
+            print("Error with Hey")
             response.say("Hi")
     # Set up a <Gather> to capture further speech input
     gather = Gather(speechModel="default",input='speech', language='he-IL', action=request.build_absolute_uri(), timeout=2.4,speechTimeout=2,hints="שלום, מה המצב, הלו,היי")
