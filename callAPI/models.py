@@ -31,3 +31,11 @@ class ConversationTurn(models.Model):
     def __str__(self):
         speaker = "AI" if self.is_ai else "Human"
         return f"{speaker}: {self.text[:50]}..."
+    
+
+class MediaFile(models.Model):
+    name = models.CharField(max_length=255)
+    file = models.FileField(upload_to='media_files/')  # This will save files in MEDIA_ROOT/media_files/
+
+    def __str__(self):
+        return self.name

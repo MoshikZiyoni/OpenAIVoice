@@ -178,12 +178,13 @@ def call_twiml(request, call_id):
     if not speech_result:
         response.pause(length=1.5)
         # response.say("HEY")
-        
-        hey_audio_url = f'{public_url}{settings.MEDIA_URL}Hey.mp3'
-        response.play(hey_audio_url)
-    
+        try:
+            hey_audio_url = f'{public_url}{settings.MEDIA_URL}Hey.mp3'
+            response.play(hey_audio_url)
+        except:
+            response.say("Hi")
     # Set up a <Gather> to capture further speech input
-    gather = Gather(speechModel="default",input='speech', language='he-IL', action=request.build_absolute_uri(), timeout=2.4,speechTimeout=2,hints="שלום, מה המצב, הלו")
+    gather = Gather(speechModel="default",input='speech', language='he-IL', action=request.build_absolute_uri(), timeout=2.4,speechTimeout=2,hints="שלום, מה המצב, הלו,היי")
     # You can omit the <Say> inside the <Gather> if you don't want a repeated greeting.
     response.append(gather)
     
