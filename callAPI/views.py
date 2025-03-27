@@ -71,7 +71,6 @@ def make_call(request):
                 print(file_name)
         else:
             print("MEDIA_ROOT directory does not exist:", settings.MEDIA_ROOT)
-            print("Full path to Hey.mp3:", hey_file_path)
         
         # Initiate the outbound call using Twilio
         try:
