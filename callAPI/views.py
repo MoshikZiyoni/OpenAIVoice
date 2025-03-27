@@ -58,8 +58,29 @@ def make_call(request):
         if not os.path.exists(settings.MEDIA_ROOT):
             os.makedirs(settings.MEDIA_ROOT, exist_ok=True)  # Safe creation
 
-        # hey_file_path = os.path.join(settings.MEDIA_ROOT, 'Hey.mp3')
-
+        try:
+            tts_completion = openai.audio.speech.create(
+                model="gpt-4o-mini-tts",
+                voice="alloy",  # Optionally remove if you prefer the default voice.
+                instructions=(
+                    "Speak in Hebrew with a warm, upbeat, and reassuring tone. Use a natural Israeli accent "
+                    "with clear, precise pronunciation. Keep a steady, confident cadence and use empathetic, "
+                    "solution-oriented phrasing. Focus on positive language and next steps."
+                ),
+                input="היי אני העוזר הוירטואלי של מושיק"
+            )
+            welcome_audio_filename = f"tts'_welcome_{call_obj.id}.mp3"
+            audio_filepath = os.path.join(settings.MEDIA_ROOT, welcome_audio_filename)
+            
+            tts_completion.stream_to_file(audio_filepath)
+            print("audio_filepath:", audio_filepath)
+            welcome_audio_url = f'{public_url}{settings.MEDIA_URL}{welcome_audio_filename}'
+            print("audio_url:", welcome_audio_url)
+        except Exception as e:
+            print("TTS error:", e)
+            audio_url = None
+        
+        
         # # Check if Hey.mp3 exists
         # if not os.path.exists(hey_file_path):
         #     print("Hey.mp3 file does not exist at:", hey_file_path)
@@ -184,7 +205,15 @@ def call_twiml(request, call_id):
     if not speech_result:
         response.pause(length=1.5)
         response.say("היי" ,language="he-IL")
-    
+        response.pause(length=1)
+        try:
+            welcome_audio_filename = f"tts'_welcome_{call_obj.id}.mp3"
+            welcome_audio_url = f'{public_url}{settings.MEDIA_URL}{welcome_audio_filename}'
+            # Play the audio if available; otherwise, say the text.
+            if welcome_audio_url:
+                response.play(welcome_audio_url)
+        except Exception as e:
+            print("Welcome audio error:", e)
     # Set up a <Gather> element with partialResultCallback.
     # Here, we assume you have set up an endpoint at '/partial-callback/' to handle partial results.
     gather = Gather(
