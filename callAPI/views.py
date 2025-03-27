@@ -98,7 +98,15 @@ def call_twiml(request, call_id):
         ConversationTurn.objects.create(call=call_obj, text=speech_result, is_ai=False)
         
         # Build conversation history (system prompt + prior turns)
-        conversation = [{"role": "system", "content": call_obj.prompt}]
+        conversation = [
+            {
+                "role": "system",
+                "content": (
+                    "You are an AI assistant that responds in natural, conversational Hebrew with a friendly and casual tone. "
+                    "Incorporate Israeli slang (e.g., 'sababa') appropriately and maintain a warm, upbeat, and confident demeanor."
+                )
+            }
+        ]
         for turn in call_obj.conversation.all():
             role = "assistant" if turn.is_ai else "user"
             conversation.append({"role": role, "content": turn.text})
@@ -114,7 +122,7 @@ def call_twiml(request, call_id):
             ai_response = completion.choices[0].message.content.strip()
             print("ai_response: " , ai_response)
         except Exception as e:
-            print("Error with gpt-3.5", e)
+            print("Error with gpt-40-mini", e)
             ai_response = "מצטער איני יכול לעזור כרגע"
         
         # Save the AI response
@@ -153,7 +161,7 @@ def call_twiml(request, call_id):
         response.say("HEY")
     
     # Set up a <Gather> to capture further speech input
-    gather = Gather(input='speech', language='he-IL', action=request.build_absolute_uri(), timeout=2.4,speechTimeout=2,hints="שלום, מה המצב, הלו")
+    gather = Gather(speechModel="default",input='speech', language='he-IL', action=request.build_absolute_uri(), timeout=2.4,speechTimeout=2,hints="שלום, מה המצב, הלו")
     # You can omit the <Say> inside the <Gather> if you don't want a repeated greeting.
     response.append(gather)
     
