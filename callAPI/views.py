@@ -75,7 +75,19 @@ def make_call(request):
             
         except Exception as e:
             print("TTS error:", e)
-        
+        import shutil
+
+        # Ensure ummm.mp3 exists in MEDIA_ROOT
+        umm_filepath = os.path.join(settings.MEDIA_ROOT, "ummm.mp3")
+        if not os.path.exists(umm_filepath):
+            source_path = os.path.join(os.path.dirname(__file__), "static", "ummm.mp3")  # Adjust source path
+            shutil.copy(source_path, umm_filepath)
+
+        # Ensure Hey.mp3 exists in MEDIA_ROOT
+        hey_filepath = os.path.join(settings.MEDIA_ROOT, "Hey.mp3")
+        if not os.path.exists(hey_filepath):
+            source_path = os.path.join(os.path.dirname(__file__), "static", "Hey.mp3")  # Adjust source path
+            shutil.copy(source_path, hey_filepath)
         try:
             umm_filepath = os.path.join(settings.MEDIA_ROOT, "ummm.mp3")
             if os.path.exists(umm_filepath):
