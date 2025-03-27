@@ -87,7 +87,8 @@ def call_twiml(request, call_id):
     public_url = "https://web-production-7204.up.railway.app"
     call_obj = get_object_or_404(Call, id=call_id)
     response = VoiceResponse()
-    
+    if not os.path.exists(settings.MEDIA_ROOT):
+        os.makedirs(settings.MEDIA_ROOT)
     # Capture the transcription provided by Twilio
     speech_result = request.POST.get('SpeechResult') or request.GET.get('SpeechResult')
     if speech_result:
@@ -122,7 +123,7 @@ def call_twiml(request, call_id):
             ai_response = completion.choices[0].message.content.strip()
             print("ai_response: " , ai_response)
         except Exception as e:
-            print("Error with gpt-40-mini", e)
+            print("Error with gpt-4o-mini", e)
             ai_response = "מצטער איני יכול לעזור כרגע"
         
         # Save the AI response
@@ -159,6 +160,8 @@ def call_twiml(request, call_id):
     if not speech_result:
         response.pause(length=1.5)
         # response.say("HEY")
+        hey_audio_filename = f"hey.mp3"
+        hey_audio_filepath = os.path.join(settings.MEDIA_ROOT, audio_filename)
         hey_audio_url = f'{public_url}{settings.MEDIA_URL}Hey.mp3'
         response.play(hey_audio_url)
     
