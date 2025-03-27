@@ -126,7 +126,7 @@ def call_twiml(request, call_id):
                 voice="alloy",  # Remove this if you want default voice for audio generation
                 input=ai_response
             )
-            audio_filename = f"tts_{call_obj.id}.wav"
+            audio_filename = f"tts_{call_obj.id}.mp3"
             if not os.path.exists(settings.MEDIA_ROOT):
                 os.makedirs(settings.MEDIA_ROOT)
             audio_filepath = os.path.join(settings.MEDIA_ROOT, audio_filename)
