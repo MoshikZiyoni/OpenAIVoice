@@ -105,31 +105,36 @@ def call_twiml(request, call_id):
     public_url = "https://web-production-7204.up.railway.app"
     call_obj = get_object_or_404(Call, id=call_id)
     response = VoiceResponse()
-    
-    # Capture the transcription provided by Twilio
+
+    # Capture final transcription provided by Twilio
     speech_result = request.POST.get('SpeechResult') or request.GET.get('SpeechResult')
+    # Capture partial transcription (if available)
+    partial_speech = request.POST.get('PartialSpeechResult') or request.GET.get('PartialSpeechResult')
+
+    if partial_speech:
+        # Log the partial result to examine if it speeds up response time.
+        print("Partial speech received:", partial_speech)
+        # Optionally, you could store or process the partial speech here.
+
     if speech_result:
-        # Log/print the user's speech for debugging
+        # Log and save the final speech input.
         print("User said:", speech_result)
-        
-        # Save the human input
         ConversationTurn.objects.create(call=call_obj, text=speech_result, is_ai=False)
-        
-        # Build conversation history (system prompt + prior turns)
-        conversation = [
-            {
+
+        # Build conversation history with system prompt and prior turns.
+        conversation = [{
             "role": "system",
             "content": (
-                "Well, you're an AI assistant that speaks regular Hebrew, like, in a totally chill way and with good vibes."
-                "Throw in some Israeli slang here and there (like 'sababa') and keep a good atmosphere, bro, be confident."
+                "Well, you're an AI assistant that speaks regular Hebrew, like, in a totally chill way "
+                "and with good vibes. Throw in some Israeli slang here and there (like 'sababa') and keep "
+                "a good atmosphere, bro, be confident."
             )
-            }
-        ]
+        }]
         for turn in call_obj.conversation.all():
             role = "assistant" if turn.is_ai else "user"
             conversation.append({"role": role, "content": turn.text})
         
-        # Generate AI response using ChatCompletion (for text)
+        # Generate AI response using ChatCompletion (text)
         try:
             completion = openai.chat.completions.create(
                 model="gpt-4o-mini",
@@ -138,20 +143,24 @@ def call_twiml(request, call_id):
                 max_tokens=100
             )
             ai_response = completion.choices[0].message.content.strip()
-            print("ai_response: " , ai_response)
+            print("ai_response:", ai_response)
         except Exception as e:
-            print("Error with gpt-4o-mini", e)
+            print("Error with gpt-4o-mini:", e)
             ai_response = "מצטער איני יכול לעזור כרגע"
         
-        # Save the AI response
+        # Save the AI response.
         ConversationTurn.objects.create(call=call_obj, text=ai_response, is_ai=True)
         
-        # Use GPT-4o-Audio-Preview to generate TTS audio for the AI response
+        # Convert the AI response to audio using GPT-4o-Audio-Preview.
         try:
             tts_completion = openai.audio.speech.create(
                 model="gpt-4o-mini-tts",
-                voice="alloy",  # Remove this if you want default voice for audio generation
-                instructions = "Speak in Hebrew with a warm, upbeat, and reassuring tone.Use a natural Israeli accent with clear, precise pronunciation.Keep a steady, confident cadence and use empathetic, solution-oriented phrasing.Focus on positive language and next steps.",
+                voice="alloy",  # Optionally remove if you prefer the default voice.
+                instructions=(
+                    "Speak in Hebrew with a warm, upbeat, and reassuring tone. Use a natural Israeli accent "
+                    "with clear, precise pronunciation. Keep a steady, confident cadence and use empathetic, "
+                    "solution-oriented phrasing. Focus on positive language and next steps."
+                ),
                 input=ai_response
             )
             audio_filename = f"tts_{call_obj.id}.mp3"
@@ -165,22 +174,32 @@ def call_twiml(request, call_id):
             print("TTS error:", e)
             audio_url = None
         
-        # Play the audio response if available; otherwise, speak the AI text response
+        # Play the audio if available; otherwise, say the text.
         if audio_url:
             response.play(audio_url)
         else:
             response.say(ai_response)
-    
-    # Only greet with "HEY" if this is the first request (i.e., no speech_result yet)
+
+    # If there's no final speech result, greet the caller.
     if not speech_result:
         response.pause(length=1.5)
         response.say("Hi")
-    # Set up a <Gather> to capture further speech input
-    gather = Gather(speechModel="default",input='speech', language='he-IL', action=request.build_absolute_uri(), timeout=1.5,speechTimeout=1.5,hints="שלום, מה המצב, הלו,היי")
-    # You can omit the <Say> inside the <Gather> if you don't want a repeated greeting.
+    
+    # Set up a <Gather> element with partialResultCallback.
+    # Here, we assume you have set up an endpoint at '/partial-callback/' to handle partial results.
+    gather = Gather(
+        speechModel="default",
+        input='speech',
+        language='he-IL',
+        action=request.build_absolute_uri(),  # Handles final speech input.
+        timeout=1.5,
+        speechTimeout=1.5,
+        hints="שלום, מה המצב, הלו, היי",
+        partialResultCallback=request.build_absolute_uri('/partial-callback/')
+    )
     response.append(gather)
     
-    # Redirect to the same URL if no input is captured
+    # Redirect back to the same URL if no input is captured.
     response.redirect(request.build_absolute_uri())
     
     return HttpResponse(response.to_xml(), content_type='application/xml')
