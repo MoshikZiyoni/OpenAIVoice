@@ -55,12 +55,16 @@ def make_call(request):
             callback_url = request.build_absolute_uri(f'/api/call/{call_obj.id}/twiml/')
             status_callback_url = request.build_absolute_uri(f'/api/call/{call_obj.id}/status/')
         print("Start calling")
+        if not os.path.exists(settings.MEDIA_ROOT):
+            os.makedirs(settings.MEDIA_ROOT, exist_ok=True)  # Safe creation
+
         hey_file_path = os.path.join(settings.MEDIA_ROOT, 'Hey.mp3')
+
+        # Check if Hey.mp3 exists
         if not os.path.exists(hey_file_path):
             print("Hey.mp3 file does not exist at:", hey_file_path)
-            os.makedirs(settings.MEDIA_ROOT)
-            hey_file_path = os.path.join(settings.MEDIA_ROOT, 'Hey.mp3')
-            print("creating media hey_file_path for file at: " ,hey_file_path)
+        else:
+            print("Hey.mp3 file exists at:", hey_file_path)
             
         # Initiate the outbound call using Twilio
         try:
