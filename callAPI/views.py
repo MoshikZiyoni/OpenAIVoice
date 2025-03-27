@@ -2,6 +2,7 @@
 
 import base64
 import os
+import random
 from django.shortcuts import get_object_or_404
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -83,6 +84,11 @@ def make_call(request):
         if not os.path.exists(umm_filepath):
             source_path = os.path.join(os.path.dirname(__file__), "static", "ummm.wav")  # Adjust source path
             shutil.copy(source_path, umm_filepath)
+            
+        haha_filepath = os.path.join(settings.MEDIA_ROOT, "haha.wav")
+        if not os.path.exists(haha_filepath):
+            source_path = os.path.join(os.path.dirname(__file__), "static", "haha.wav")  # Adjust source path
+            shutil.copy(source_path, haha_filepath)
 
         # Ensure Hey.wav exists in MEDIA_ROOT
         hey_filepath = os.path.join(settings.MEDIA_ROOT, "Hey.wav")
@@ -97,7 +103,15 @@ def make_call(request):
                 print("File not found!")
         except Exception as e:
             print("Error in ummm.wav file:", e)
-            
+        
+        try:
+            haha_filepath = os.path.join(settings.MEDIA_ROOT, "haha.wav")
+            if os.path.exists(haha_filepath):
+                print(f"File exists at: {haha_filepath}")
+            else:
+                print("File not found!")
+        except Exception as e:
+            print("Error in haha.wav file:", e)
             
         try:
             hey_filepath = os.path.join(settings.MEDIA_ROOT, "Hey.wav")
@@ -177,8 +191,9 @@ def call_twiml(request, call_id):
         
         # Immediately play the filler audio.
         try:
-            filler_filename = "ummm.wav"
-            filler_url = f"{public_url}/media/{filler_filename}"
+            filler_choices = ["ummm.wav", "haha.wav"]
+            chosen_filler = random.choice(filler_choices)
+            filler_url = f"{public_url}/media/{chosen_filler}"
             print("Playing filler audio:", filler_url)
             response.play(filler_url)
         except Exception as e:
