@@ -161,7 +161,7 @@ def call_twiml(request, call_id):
         response.pause(length=1.5)
         # response.say("HEY")
         hey_audio_filename = f"hey.mp3"
-        hey_audio_filepath = os.path.join(settings.MEDIA_ROOT, audio_filename)
+        hey_audio_filepath = os.path.join(settings.MEDIA_ROOT, hey_audio_filename)
         hey_audio_url = f'{public_url}{settings.MEDIA_URL}Hey.mp3'
         response.play(hey_audio_url)
     
