@@ -45,7 +45,7 @@ def make_call(request):
         )
         print("New call obg creadted")
         # Use PUBLIC_URL from environment for a publicly accessible callback URL.
-        # public_url = "https://d650-94-188-131-83.ngrok-free.app"
+        # public_url = "https://0b22-94-188-131-83.ngrok-free.app"
         public_url = "https://web-production-7204.up.railway.app"
         if public_url:
             callback_url = f'{public_url}/api/call/{call_obj.id}/twiml/'
@@ -71,21 +71,30 @@ def make_call(request):
             )
             welcome_audio_filename = f"tts'_welcome_{call_obj.id}.mp3"
             audio_filepath = os.path.join(settings.MEDIA_ROOT, welcome_audio_filename)
-            
             tts_completion.stream_to_file(audio_filepath)
-            print("audio_filepath:", audio_filepath)
-            welcome_audio_url = f'{public_url}{settings.MEDIA_URL}{welcome_audio_filename}'
-            print("audio_url:", welcome_audio_url)
+            
         except Exception as e:
             print("TTS error:", e)
-            audio_url = None
         
-        
-        # # Check if Hey.mp3 exists
-        # if not os.path.exists(hey_file_path):
-        #     print("Hey.mp3 file does not exist at:", hey_file_path)
-        # else:
-        #     print("Hey.mp3 file exists at:", hey_file_path)
+        try:
+            umm_filepath = os.path.join(settings.MEDIA_ROOT, "ummm.mp3")
+            if os.path.exists(umm_filepath):
+                print(f"File exists at: {umm_filepath}")
+            else:
+                print("File not found!")
+        except Exception as e:
+            print("Error in ummm.mp3 file:", e)
+            
+            
+        try:
+            hey_filepath = os.path.join(settings.MEDIA_ROOT, "Hey.mp3")
+            if os.path.exists(hey_filepath):
+                print(f"File exists at: {hey_filepath}")
+            else:
+                print("File not found!")
+        except Exception as e:
+            print("Error in hey.mp3 file:", e)
+       
         if os.path.exists(settings.MEDIA_ROOT):
             print("Files in MEDIA_ROOT:")
             for file_name in os.listdir(settings.MEDIA_ROOT):
@@ -122,7 +131,7 @@ def call_twiml(request, call_id):
     Generate TwiML for the ongoing call. Process the caller's speech with OpenAI,
     convert the AI response to audio using GPT-4o-Audio-Preview, and play the audio.
     """
-    # public_url = "https://d650-94-188-131-83.ngrok-free.app"
+    # public_url = "https://0b22-94-188-131-83.ngrok-free.app"
     public_url = "https://web-production-7204.up.railway.app"
     call_obj = get_object_or_404(Call, id=call_id)
     response = VoiceResponse()
@@ -136,12 +145,19 @@ def call_twiml(request, call_id):
         # Log the partial result to examine if it speeds up response time.
         print("Partial speech received:", partial_speech)
         # Optionally, you could store or process the partial speech here.
-
+    try:
+        ummm_audio_filename = "ummm.mp3"
+        ummm_audio_url = f'{public_url}{settings.MEDIA_URL}{ummm_audio_filename}'
+        # Play the audio if available; otherwise, say the text.
+        if ummm_audio_url:
+            response.play(ummm_audio_url)
+    except Exception as e:
+        print("Welcome audio error:", e)
     if speech_result:
         # Log and save the final speech input.
         print("User said:", speech_result)
         ConversationTurn.objects.create(call=call_obj, text=speech_result, is_ai=False)
-        response.say("תן לי שנייה לחשוב",language="he-IL")
+        
         # Build conversation history with system prompt and prior turns.
         conversation = [{
             "role": "system",
@@ -204,16 +220,17 @@ def call_twiml(request, call_id):
     # If there's no final speech result, greet the caller.
     if not speech_result:
         response.pause(length=1.5)
-        response.say("היי" ,language="he-IL")
-        response.pause(length=1)
         try:
-            welcome_audio_filename = f"tts'_welcome_{call_obj.id}.mp3"
+            # welcome_audio_filename = f"tts'_welcome_{call_obj.id}.mp3"
+            welcome_audio_filename = f"Hey.mp3"
             welcome_audio_url = f'{public_url}{settings.MEDIA_URL}{welcome_audio_filename}'
             # Play the audio if available; otherwise, say the text.
             if welcome_audio_url:
                 response.play(welcome_audio_url)
+                print("playing welcome audio")
         except Exception as e:
             print("Welcome audio error:", e)
+            response.say("Hi")
     # Set up a <Gather> element with partialResultCallback.
     # Here, we assume you have set up an endpoint at '/partial-callback/' to handle partial results.
     gather = Gather(
@@ -221,10 +238,10 @@ def call_twiml(request, call_id):
         input='speech',
         language='he-IL',
         action=request.build_absolute_uri(),  # Handles final speech input.
-        timeout=1.5,
-        speechTimeout=1.5,
+        timeout=0.5,
+        speechTimeout=0.5,
         hints="שלום, מה המצב, הלו, היי",
-        partialResultCallback=f"{public_url}/api/partial-callback/"
+        # partialResultCallback=f"{public_url}/api/partial-callback/"
     )
     response.append(gather)
     
@@ -268,6 +285,7 @@ def get_conversation(request, call_id):
 @csrf_exempt
 def partial_callback(request):
     """Handle partial speech results from Twilio."""
+    print("Request POST data: %s", request.POST)
     partial_speech = request.POST.get('PartialSpeechResult')
     if partial_speech:
         print("Partial speech detected:", partial_speech)
