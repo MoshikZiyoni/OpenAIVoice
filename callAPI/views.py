@@ -106,9 +106,10 @@ def call_twiml(request, call_id):
         # Generate AI response using ChatCompletion (for text)
         try:
             completion = openai.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4o-mini",
                 messages=conversation,
                 temperature=0.7,
+                max_tokens=100
             )
             ai_response = completion.choices[0].message.content.strip()
             print("ai_response: " , ai_response)
@@ -124,6 +125,7 @@ def call_twiml(request, call_id):
             tts_completion = openai.audio.speech.create(
                 model="gpt-4o-mini-tts",
                 voice="alloy",  # Remove this if you want default voice for audio generation
+                instructions = "Speak in Hebrew with a warm, upbeat, and reassuring tone.Use a natural Israeli accent with clear, precise pronunciation.Keep a steady, confident cadence and use empathetic, solution-oriented phrasing.Focus on positive language and next steps.",
                 input=ai_response
             )
             audio_filename = f"tts_{call_obj.id}.mp3"
@@ -147,10 +149,11 @@ def call_twiml(request, call_id):
     
     # Only greet with "HEY" if this is the first request (i.e., no speech_result yet)
     if not speech_result:
+        response.pause(length=1.5)
         response.say("HEY")
     
     # Set up a <Gather> to capture further speech input
-    gather = Gather(input='speech', language='he-IL', action=request.build_absolute_uri(), timeout=3)
+    gather = Gather(input='speech', language='he-IL', action=request.build_absolute_uri(), timeout=2.4,speechTimeout=2,hints="שלום, מה המצב, הלו")
     # You can omit the <Say> inside the <Gather> if you don't want a repeated greeting.
     response.append(gather)
     
