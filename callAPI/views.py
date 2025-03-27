@@ -162,6 +162,7 @@ def call_twiml(request, call_id):
         ummm_audio_url = f'{public_url}/media/{ummm_audio_filename}'
         # Play the audio if available; otherwise, say the text.
         if ummm_audio_url:
+            print("ummm_audio_url: ", ummm_audio_url)
             response.play(ummm_audio_url)
     except Exception as e:
         print("Welcome audio error:", e)
@@ -239,7 +240,7 @@ def call_twiml(request, call_id):
             # Play the audio if available; otherwise, say the text.
             if welcome_audio_url:
                 response.play(welcome_audio_url)
-                print("playing welcome audio")
+                print("playing welcome audio:",welcome_audio_url)
         except Exception as e:
             print("Welcome audio error:", e)
             response.say("Hi")
