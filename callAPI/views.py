@@ -100,11 +100,11 @@ def call_twiml(request, call_id):
         # Build conversation history (system prompt + prior turns)
         conversation = [
             {
-                "role": "system",
-                "content": (
-                    "You are an AI assistant that responds in natural, conversational Hebrew with a friendly and casual tone. "
-                    "Incorporate Israeli slang (e.g., 'sababa') appropriately and maintain a warm, upbeat, and confident demeanor."
-                )
+            "role": "system",
+            "content": (
+                "Well, you're an AI assistant that speaks regular Hebrew, like, in a totally chill way and with good vibes."
+                "Throw in some Israeli slang here and there (like 'sababa') and keep a good atmosphere, bro, be confident."
+            )
             }
         ]
         for turn in call_obj.conversation.all():
@@ -158,7 +158,9 @@ def call_twiml(request, call_id):
     # Only greet with "HEY" if this is the first request (i.e., no speech_result yet)
     if not speech_result:
         response.pause(length=1.5)
-        response.say("HEY")
+        # response.say("HEY")
+        hey_audio_url = f'{public_url}{settings.MEDIA_URL}Hey.mp3'
+        response.play(hey_audio_url)
     
     # Set up a <Gather> to capture further speech input
     gather = Gather(speechModel="default",input='speech', language='he-IL', action=request.build_absolute_uri(), timeout=2.4,speechTimeout=2,hints="שלום, מה המצב, הלו")
