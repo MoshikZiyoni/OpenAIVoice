@@ -177,8 +177,13 @@ def call_twiml(request, call_id):
         # response.say("HEY")
         try:
             hey_audio_url = f'{public_url}{settings.MEDIA_URL}Hey.mp3'
-            response.play(hey_audio_url)
-            print("Suceess with Hey")
+            print(hey_audio_url)
+            response = requests.get(hey_audio_url)
+            if response.status_code == 200:
+                print("Success! The file is accessible at:", hey_audio_url)
+                response.play(hey_audio_url)
+            else:
+                print(f"Failed to access the file. Status code: {response.status_code}")
         except:
             print("Error with Hey")
             response.say("Hi")
