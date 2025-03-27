@@ -23,6 +23,6 @@
 import os
 import requests
 # Define the full path to the file
-hey_audio_url='https://web-production-7204.up.railway.app/media/Hey.mp3'
+hey_audio_url='https://web-production-7204.up.railway.app/media/Hey.wav'
 response = requests.get(hey_audio_url)
 print(response.status_code)

@@ -13,6 +13,7 @@ from .models import Call, ConversationTurn
 from rest_framework.decorators import api_view
 import openai
 from dotenv import load_dotenv
+import threading
 
 load_dotenv()
 
@@ -77,35 +78,35 @@ def make_call(request):
         #     print("TTS error:", e)
         import shutil
 
-        # Ensure ummm.mp3 exists in MEDIA_ROOT
-        umm_filepath = os.path.join(settings.MEDIA_ROOT, "ummm.mp3")
+        # Ensure ummm.wav exists in MEDIA_ROOT
+        umm_filepath = os.path.join(settings.MEDIA_ROOT, "ummm.wav")
         if not os.path.exists(umm_filepath):
-            source_path = os.path.join(os.path.dirname(__file__), "static", "ummm.mp3")  # Adjust source path
+            source_path = os.path.join(os.path.dirname(__file__), "static", "ummm.wav")  # Adjust source path
             shutil.copy(source_path, umm_filepath)
 
-        # Ensure Hey.mp3 exists in MEDIA_ROOT
-        hey_filepath = os.path.join(settings.MEDIA_ROOT, "Hey.mp3")
+        # Ensure Hey.wav exists in MEDIA_ROOT
+        hey_filepath = os.path.join(settings.MEDIA_ROOT, "Hey.wav")
         if not os.path.exists(hey_filepath):
-            source_path = os.path.join(os.path.dirname(__file__), "static", "Hey.mp3")  # Adjust source path
+            source_path = os.path.join(os.path.dirname(__file__), "static", "Hey.wav")  # Adjust source path
             shutil.copy(source_path, hey_filepath)
         try:
-            umm_filepath = os.path.join(settings.MEDIA_ROOT, "ummm.mp3")
+            umm_filepath = os.path.join(settings.MEDIA_ROOT, "ummm.wav")
             if os.path.exists(umm_filepath):
                 print(f"File exists at: {umm_filepath}")
             else:
                 print("File not found!")
         except Exception as e:
-            print("Error in ummm.mp3 file:", e)
+            print("Error in ummm.wav file:", e)
             
             
         try:
-            hey_filepath = os.path.join(settings.MEDIA_ROOT, "Hey.mp3")
+            hey_filepath = os.path.join(settings.MEDIA_ROOT, "Hey.wav")
             if os.path.exists(hey_filepath):
                 print(f"File exists at: {hey_filepath}")
             else:
                 print("File not found!")
         except Exception as e:
-            print("Error in hey.mp3 file:", e)
+            print("Error in Hey.wav file:", e)
        
         if os.path.exists(settings.MEDIA_ROOT):
             print("Files in MEDIA_ROOT:")
@@ -138,130 +139,153 @@ def make_call(request):
 
 @csrf_exempt
 def call_twiml(request, call_id):
-    
     """
-    Generate TwiML for the ongoing call. Process the caller's speech with OpenAI,
-    convert the AI response to audio using GPT-4o-Audio-Preview, and play the audio.
+    Generate TwiML for the ongoing call.
+    Immediately play a filler ("ummm…") and concurrently start generating the GPT response.
+    Then, redirect to the play_response endpoint to play the generated GPT answer audio.
     """
     # public_url = "https://0b22-94-188-131-83.ngrok-free.app"
     public_url = "https://web-production-7204.up.railway.app"
     call_obj = get_object_or_404(Call, id=call_id)
     response = VoiceResponse()
-
-    # Capture final transcription provided by Twilio
+    
     speech_result = request.POST.get('SpeechResult') or request.GET.get('SpeechResult')
-    # Capture partial transcription (if available)
     partial_speech = request.POST.get('PartialSpeechResult') or request.GET.get('PartialSpeechResult')
-
+    
     if partial_speech:
-        # Log the partial result to examine if it speeds up response time.
         print("Partial speech received:", partial_speech)
-        # Optionally, you could store or process the partial speech here.
-    try:
-        ummm_audio_filename = "ummm.mp3"
-        ummm_audio_url = f'{public_url}/media/{ummm_audio_filename}'
-        # Play the audio if available; otherwise, say the text.
-        if ummm_audio_url:
-            print("ummm_audio_url: ", ummm_audio_url)
-            response.play(ummm_audio_url)
-    except Exception as e:
-        print("Welcome audio error:", e)
+    
     if speech_result:
-        # Log and save the final speech input.
         print("User said:", speech_result)
         ConversationTurn.objects.create(call=call_obj, text=speech_result, is_ai=False)
         
-        # Build conversation history with system prompt and prior turns.
+        # Build conversation history.
         conversation = [{
             "role": "system",
             "content": (
                 "Well, you're an AI assistant that speaks regular Hebrew, like, in a totally chill way "
-                "and with good vibes. Throw in some Israeli slang here and there (like 'sababa') and keep "
-                "a good atmosphere, bro, be confident."
+                "and with good vibes. Throw in some Israeli slang (like 'sababa') and keep a good atmosphere, bro."
             )
         }]
         for turn in call_obj.conversation.all():
             role = "assistant" if turn.is_ai else "user"
             conversation.append({"role": role, "content": turn.text})
         
-        # Generate AI response using ChatCompletion (text)
+        # Start background thread to generate GPT response and TTS audio.
+        thread = threading.Thread(target=generate_gpt_audio, args=(call_obj, conversation, public_url))
+        thread.start()
+        
+        # Immediately play the filler audio.
         try:
-            completion = openai.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=conversation,
-                temperature=0.7,
-                max_tokens=100
-            )
-            ai_response = completion.choices[0].message.content.strip()
-            print("ai_response:", ai_response)
+            filler_filename = "ummm.wav"
+            filler_url = f"{public_url}/media/{filler_filename}"
+            print("Playing filler audio:", filler_url)
+            response.play(filler_url)
         except Exception as e:
-            print("Error with gpt-4o-mini:", e)
-            ai_response = "מצטער איני יכול לעזור כרגע"
+            print("Filler audio error:", e)
+            response.say("ummm...")
         
-        # Save the AI response.
-        ConversationTurn.objects.create(call=call_obj, text=ai_response, is_ai=True)
-        
-        # Convert the AI response to audio using GPT-4o-Audio-Preview.
+        # After the filler, redirect to the play_response endpoint.
+        thread.join()
         try:
-            tts_completion = openai.audio.speech.create(
-                model="gpt-4o-mini-tts",
-                voice="alloy",  # Optionally remove if you prefer the default voice.
-                instructions=(
-                    "Speak in Hebrew with a warm, upbeat, and reassuring tone. Use a natural Israeli accent "
-                    "with clear, precise pronunciation. Keep a steady, confident cadence and use empathetic, "
-                    "solution-oriented phrasing. Focus on positive language and next steps."
-                ),
-                input=ai_response
-            )
             audio_filename = f"tts_{call_obj.id}.mp3"
-            audio_filepath = os.path.join(settings.MEDIA_ROOT, audio_filename)
-            
-            tts_completion.stream_to_file(audio_filepath)
-            print("audio_filepath:", audio_filepath)
-            audio_url = f'{public_url}{settings.MEDIA_URL}{audio_filename}'
-            print("audio_url:", audio_url)
-        except Exception as e:
-            print("TTS error:", e)
-            audio_url = None
-        
-        # Play the audio if available; otherwise, say the text.
-        if audio_url:
+            audio_url = f"{public_url}/media/{audio_filename}"
+            print("Playing generated audio:", audio_url)
             response.play(audio_url)
-        else:
-            response.say(ai_response)
-
-    # If there's no final speech result, greet the caller.
-    if not speech_result:
-        response.pause(length=1.5)
+        except Exception as e:
+            print("Error playing audio:", e)
+            response.say("מצטער, אירעה שגיאה בהשמעת התגובה.", language="he-IL")
+    
+    else:
+        response.pause(length=1)
         try:
-            # welcome_audio_filename = f"tts'_welcome_{call_obj.id}.mp3"
-            welcome_audio_filename = "Hey.mp3"
-            welcome_audio_url = f'{public_url}/media/{welcome_audio_filename}'
-            # Play the audio if available; otherwise, say the text.
-            if welcome_audio_url:
-                response.play(welcome_audio_url)
-                print("playing welcome audio:",welcome_audio_url)
+            welcome_filename = "Hey.wav"
+            welcome_url = f"{public_url}/media/{welcome_filename}"
+            print("Playing welcome audio:", welcome_url)
+            response.play(welcome_url)
         except Exception as e:
             print("Welcome audio error:", e)
             response.say("Hi")
-    # Set up a <Gather> element with partialResultCallback.
-    # Here, we assume you have set up an endpoint at '/partial-callback/' to handle partial results.
+    
+    # Set up a <Gather> element for continuous speech capture.
     gather = Gather(
         speechModel="default",
         input='speech',
         language='he-IL',
-        action=request.build_absolute_uri(),  # Handles final speech input.
+        action=request.build_absolute_uri(),
         timeout=0.5,
         speechTimeout=0.5,
-        hints="שלום, מה המצב, הלו, היי",
-        # partialResultCallback=f"{public_url}/api/partial-callback/"
+        hints="שלום, מה המצב, הלו, היי"
     )
     response.append(gather)
-    
-    # Redirect back to the same URL if no input is captured.
     response.redirect(request.build_absolute_uri())
     
     return HttpResponse(response.to_xml(), content_type='application/xml')
+def generate_gpt_audio(call_obj, conversation, public_url):
+    """
+    Function to generate the GPT response and TTS audio.
+    This runs in a background thread.
+    """
+    try:
+        # Generate AI response using ChatCompletion (text)
+        completion = openai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=conversation,
+            temperature=0.7,
+            max_tokens=100
+        )
+        ai_response = completion.choices[0].message.content.strip()
+        print("Generated ai_response:", ai_response)
+    except Exception as e:
+        print("Error with GPT response:", e)
+        ai_response = "מצטער איני יכול לעזור כרגע"
+    
+    # Save the AI response.
+    ConversationTurn.objects.create(call=call_obj, text=ai_response, is_ai=True)
+    
+    # Convert the AI response to audio using GPT-4o-Audio-Preview.
+    try:
+        tts_completion = openai.audio.speech.create(
+            model="gpt-4o-mini-tts",
+            voice="alloy",
+            instructions=(
+                "Speak in Hebrew with a warm, upbeat, and reassuring tone. Use a natural Israeli accent "
+                "with clear, precise pronunciation. Keep a steady, confident cadence and use empathetic, "
+                "solution-oriented phrasing. Focus on positive language and next steps."
+            ),
+            input=ai_response
+        )
+        audio_filename = f"tts_{call_obj.id}.mp3"
+        audio_filepath = os.path.join(settings.MEDIA_ROOT, audio_filename)
+        tts_completion.stream_to_file(audio_filepath)
+        print("TTS audio generated at:", audio_filepath)
+    except Exception as e:
+        print("TTS error:", e)
+        
+@csrf_exempt
+def play_response(request, call_id):
+    """
+    Endpoint to check if GPT+TTS audio is ready.
+    If ready, play it; if not, pause and redirect to itself.
+    """
+    public_url = "https://0b22-94-188-131-83.ngrok-free.app"
+    call_obj = get_object_or_404(Call, id=call_id)
+    response = VoiceResponse()
+    
+    audio_filename = f"tts_{call_obj.id}.mp3"
+    audio_filepath = os.path.join(settings.MEDIA_ROOT, audio_filename)
+    
+    if os.path.exists(audio_filepath):
+        audio_url = f"{public_url}{settings.MEDIA_URL}{audio_filename}"
+        print("Playing GPT response audio:", audio_url)
+        response.play(audio_url)
+    else:
+        # Audio not ready yet—pause briefly and redirect back.
+        print("GPT response audio not ready yet. Waiting...")
+        response.pause(length=1)
+        response.redirect(request.build_absolute_uri())
+    
+    return HttpResponse(response.to_xml(), content_type="application/xml")
 
 @csrf_exempt
 @api_view(['POST'])
