@@ -121,50 +121,40 @@ def call_twiml(request, call_id):
         
         # Use GPT-4o-Audio-Preview to generate TTS audio for the AI response
         try:
-            
             tts_completion = openai.audio.speech.create(
-            model="gpt-4o-mini-tts",
-            voice="alloy",
-            input = ai_response)
-            # Define the filename and file path
+                model="gpt-4o-mini-tts",
+                voice="alloy",  # Remove this if you want default voice for audio generation
+                input=ai_response
+            )
             audio_filename = f"tts_{call_obj.id}.wav"
             if not os.path.exists(settings.MEDIA_ROOT):
                 os.makedirs(settings.MEDIA_ROOT)
             audio_filepath = os.path.join(settings.MEDIA_ROOT, audio_filename)
             
-            # Save the audio file to MEDIA_ROOT
             tts_completion.stream_to_file(audio_filepath)
-            print("audio_filepath: ", audio_filepath)
-            try:
-                audio_url = f'{public_url}{settings.MEDIA_URL}{audio_filename}'
-
-            except Exception as e:
-                print(f"An error occurred during file upload: {e}")
-                
-            
-            # Construct the audio URL
-            # audio_url = audio_filename  # Use the filename directly as the URL
-            # audio_url = f'{public_url}{settings.MEDIA_URL}{audio_filename}'
-
-            print("audio_url:",audio_url)
+            print("audio_filepath:", audio_filepath)
+            audio_url = f'{public_url}{settings.MEDIA_URL}{audio_filename}'
+            print("audio_url:", audio_url)
         except Exception as e:
             print("TTS error:", e)
             audio_url = None
         
-        # If TTS conversion succeeded, play the audio; otherwise, fall back to text-to-speech.
+        # Play the audio response if available; otherwise, speak the AI text response
         if audio_url:
-            print("!!!audio_url:",audio_url)
             response.play(audio_url)
         else:
-            response.say(ai_response, voice=call_obj.voice)
+            response.say(ai_response)
+    
+    # Only greet with "HEY" if this is the first request (i.e., no speech_result yet)
+    if not speech_result:
+        response.say("HEY")
     
     # Set up a <Gather> to capture further speech input
-    gather = Gather(input='speech',language='he-IL', action=request.build_absolute_uri(), timeout=3)
-    gather.say("HEY",voice=call_obj.voice)
+    gather = Gather(input='speech', language='he-IL', action=request.build_absolute_uri(), timeout=3)
+    # You can omit the <Say> inside the <Gather> if you don't want a repeated greeting.
     response.append(gather)
     
-    
-    # Redirect to the same URL if no input is captured.
+    # Redirect to the same URL if no input is captured
     response.redirect(request.build_absolute_uri())
     
     return HttpResponse(response.to_xml(), content_type='application/xml')
