@@ -13,6 +13,7 @@ from .models import Call, ConversationTurn
 from rest_framework.decorators import api_view
 import openai
 from dotenv import load_dotenv
+
 load_dotenv()
 
 # Set your OpenAI API key
@@ -54,6 +55,13 @@ def make_call(request):
             callback_url = request.build_absolute_uri(f'/api/call/{call_obj.id}/twiml/')
             status_callback_url = request.build_absolute_uri(f'/api/call/{call_obj.id}/status/')
         print("Start calling")
+        hey_file_path = os.path.join(settings.MEDIA_ROOT, 'Hey.mp3')
+        if not os.path.exists(hey_file_path):
+            print("Hey.mp3 file does not exist at:", hey_file_path)
+            os.makedirs(settings.MEDIA_ROOT)
+            hey_file_path = os.path.join(settings.MEDIA_ROOT, 'Hey.mp3')
+            print("creating media hey_file_path for file at: " ,hey_file_path)
+            
         # Initiate the outbound call using Twilio
         try:
             
@@ -87,9 +95,7 @@ def call_twiml(request, call_id):
     public_url = "https://web-production-7204.up.railway.app"
     call_obj = get_object_or_404(Call, id=call_id)
     response = VoiceResponse()
-    hey_file_path = os.path.join(settings.MEDIA_ROOT, 'Hey.mp3')
-    if not os.path.exists(hey_file_path):
-        print("Hey.mp3 file does not exist at:", hey_file_path)
+    
     # Capture the transcription provided by Twilio
     speech_result = request.POST.get('SpeechResult') or request.GET.get('SpeechResult')
     if speech_result:
