@@ -120,7 +120,7 @@ def call_twiml(request, call_id):
         # Log and save the final speech input.
         print("User said:", speech_result)
         ConversationTurn.objects.create(call=call_obj, text=speech_result, is_ai=False)
-        response.say("תן לי שנייה לחשוב", voice='he-IL-Standard-A',language="he-IL")
+        response.say("תן לי שנייה לחשוב", voice="alice",language="he-IL")
         # Build conversation history with system prompt and prior turns.
         conversation = [{
             "role": "system",
@@ -183,7 +183,7 @@ def call_twiml(request, call_id):
     # If there's no final speech result, greet the caller.
     if not speech_result:
         response.pause(length=1.5)
-        response.say("היי" ,voice='he-IL-Standard-A',language="he-IL")
+        response.say("היי" ,voice="alice",language="he-IL")
     
     # Set up a <Gather> element with partialResultCallback.
     # Here, we assume you have set up an endpoint at '/partial-callback/' to handle partial results.
@@ -235,7 +235,7 @@ def get_conversation(request, call_id):
     return JsonResponse(conversation, safe=False)
 
 
-@api_view(['POST','GET'])
+
 @csrf_exempt
 def partial_callback(request):
     """Handle partial speech results from Twilio."""
