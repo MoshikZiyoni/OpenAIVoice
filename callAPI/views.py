@@ -87,8 +87,9 @@ def call_twiml(request, call_id):
     public_url = "https://web-production-7204.up.railway.app"
     call_obj = get_object_or_404(Call, id=call_id)
     response = VoiceResponse()
-    if not os.path.exists(settings.MEDIA_ROOT):
-        os.makedirs(settings.MEDIA_ROOT)
+    hey_file_path = os.path.join(settings.MEDIA_ROOT, 'Hey.mp3')
+    if not os.path.exists(hey_file_path):
+        print("Hey.mp3 file does not exist at:", hey_file_path)
     # Capture the transcription provided by Twilio
     speech_result = request.POST.get('SpeechResult') or request.GET.get('SpeechResult')
     if speech_result:
@@ -160,8 +161,7 @@ def call_twiml(request, call_id):
     if not speech_result:
         response.pause(length=1.5)
         # response.say("HEY")
-        hey_audio_filename = f"hey.mp3"
-        hey_audio_filepath = os.path.join(settings.MEDIA_ROOT, hey_audio_filename)
+        
         hey_audio_url = f'{public_url}{settings.MEDIA_URL}Hey.mp3'
         response.play(hey_audio_url)
     
