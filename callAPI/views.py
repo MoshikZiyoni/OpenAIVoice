@@ -195,7 +195,7 @@ def call_twiml(request, call_id):
         timeout=1.5,
         speechTimeout=1.5,
         hints="שלום, מה המצב, הלו, היי",
-        partialResultCallback=request.build_absolute_uri('/partial-callback/')
+        partialResultCallback=f"{public_url}/partial-callback/"
     )
     response.append(gather)
     
@@ -233,3 +233,13 @@ def get_conversation(request, call_id):
     call_obj = get_object_or_404(Call, id=call_id)
     conversation = list(call_obj.conversation.all().values())
     return JsonResponse(conversation, safe=False)
+
+
+@csrf_exempt
+def partial_callback(request):
+    """Handle partial speech results from Twilio."""
+    partial_speech = request.POST.get('PartialSpeechResult')
+    if partial_speech:
+        print("Partial speech detected:", partial_speech)
+        # Optionally: Process partial text here (e.g., send to OpenAI early)
+    return HttpResponse(status=200)  # Empty response (TwiML not required)
