@@ -1,8 +1,10 @@
 # callAPI/views.py
 
 import base64
+import json
 import os
 import random
+import time
 from django.shortcuts import get_object_or_404
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -15,7 +17,31 @@ from rest_framework.decorators import api_view
 import openai
 from dotenv import load_dotenv
 import threading
+import google.generativeai as genai
+from google.cloud import texttospeech
+# # Configure Google Cloud Text-to-Speech client
+from google.oauth2 import service_account
 
+# Get the JSON string from the environment variable
+service_account_info_str = os.getenv('GOOGLE_SERVICE_ACCOUNT_INFO')
+
+if service_account_info_str:
+    try:
+        # Parse the JSON string into a dictionary
+        service_account_info = json.loads(service_account_info_str)
+
+        # Create credentials from the dictionary
+        credentials = service_account.Credentials.from_service_account_info(service_account_info)
+
+        # Initialize the TextToSpeechClient with the credentials
+        tts_client = texttospeech.TextToSpeechClient(credentials=credentials)
+    except Exception as e:
+        print("Error creating credentials:", e)
+        tts_client = None
+
+# Configure Google Gemini API
+GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
+genai.configure(api_key=GOOGLE_API_KEY)
 load_dotenv()
 
 # Set your OpenAI API key
@@ -164,10 +190,10 @@ def call_twiml(request, call_id):
     response = VoiceResponse()
     
     speech_result = request.POST.get('SpeechResult') or request.GET.get('SpeechResult')
-    partial_speech = request.POST.get('PartialSpeechResult') or request.GET.get('PartialSpeechResult')
+    # partial_speech = request.POST.get('PartialSpeechResult') or request.GET.get('PartialSpeechResult')
     
-    if partial_speech:
-        print("Partial speech received:", partial_speech)
+    # if partial_speech:
+    #     print("Partial speech received:", partial_speech)
     
     if speech_result:
         print("User said:", speech_result)
@@ -186,7 +212,7 @@ def call_twiml(request, call_id):
             conversation.append({"role": role, "content": turn.text})
         
         # Start background thread to generate GPT response and TTS audio.
-        thread = threading.Thread(target=generate_gpt_audio, args=(call_obj, conversation, public_url))
+        thread = threading.Thread(target=generate_gpt_audio, args=(call_obj, conversation, public_url,speech_result))
         thread.start()
         
         # Immediately play the filler audio.
@@ -212,7 +238,7 @@ def call_twiml(request, call_id):
             response.say("מצטער, אירעה שגיאה בהשמעת התגובה.", language="he-IL")
     
     else:
-        response.pause(length=1)
+        response.pause(length=0.5)
         try:
             welcome_filename = "Hey.wav"
             welcome_url = f"{public_url}/media/{welcome_filename}"
@@ -228,79 +254,126 @@ def call_twiml(request, call_id):
         input='speech',
         language='he-IL',
         action=request.build_absolute_uri(),
-        timeout=0.5,
-        speechTimeout=0.5,
+        timeout=0.7,
+        speechTimeout=0.7,
         hints="שלום, מה המצב, הלו, היי"
     )
     response.append(gather)
     response.redirect(request.build_absolute_uri())
     
     return HttpResponse(response.to_xml(), content_type='application/xml')
-def generate_gpt_audio(call_obj, conversation, public_url):
+def generate_gpt_audio(call_obj, conversation, public_url,speech_result):
+    # """
+    # Function to generate the GPT response and TTS audio.
+    # This runs in a background thread.
+    # """
+    # try:
+    #     # Start timing
+    #     start_time = time.time()
+
+    #     # Generate AI response using ChatCompletion (text)
+    #     completion = openai.chat.completions.create(
+    #         model="gpt-4o-mini",
+    #         messages=conversation,
+    #         temperature=0.7,
+    #         max_tokens=100
+    #     )
+    #     ai_response = completion.choices[0].message.content.strip()
+    #     print("Generated ai_response:", ai_response)
+    # except Exception as e:
+    #     print("Error with GPT response:", e)
+    #     ai_response = "מצטער איני יכול לעזור כרגע"
+    
+    gemini_model_name = "gemini-2.0-flash-lite"
+    gemini_model = genai.GenerativeModel(gemini_model_name)
+
     """
-    Function to generate the GPT response and TTS audio.
+    Function to generate the Gemini response and TTS audio.
     This runs in a background thread.
     """
     try:
-        # Generate AI response using ChatCompletion (text)
-        completion = openai.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=conversation,
-            temperature=0.7,
-            max_tokens=100
+        # Start timing for text generation
+        start_time = time.time()
+
+        # Generate AI response using Gemini (text)
+        response = gemini_model.generate_content(
+            speech_result,
+            generation_config=genai.types.GenerationConfig(
+                temperature=0.7,
+                max_output_tokens=100
+            )
         )
-        ai_response = completion.choices[0].message.content.strip()
+        ai_response = response.text.strip()
         print("Generated ai_response:", ai_response)
+        end_time = time.time()
+        total_time = end_time - start_time
+        print(f"Time taken for Gemini response: {total_time:.2f} seconds")
     except Exception as e:
-        print("Error with GPT response:", e)
+        print("Error with Gemini response:", e)
         ai_response = "מצטער איני יכול לעזור כרגע"
+    
     
     # Save the AI response.
     ConversationTurn.objects.create(call=call_obj, text=ai_response, is_ai=True)
-    
-    # Convert the AI response to audio using GPT-4o-Audio-Preview.
+    start_time = time.time()
     try:
-        tts_completion = openai.audio.speech.create(
-            model="gpt-4o-mini-tts",
-            voice="alloy",
-            instructions=(
-                "Speak in Hebrew with a warm, upbeat, and reassuring tone. Use a natural Israeli accent "
-                "with clear, precise pronunciation. Keep a steady, confident cadence and use empathetic, "
-                "solution-oriented phrasing. Focus on positive language and next steps."
-            ),
-            input=ai_response
+        # Convert the AI response to audio using Google Cloud Text-to-Speech.
+        synthesis_input = texttospeech.SynthesisInput(text=ai_response)
+
+        # Choose a fast Standard voice for Hebrew (you might need to explore other Standard voices)
+        voice = texttospeech.VoiceSelectionParams(
+            language_code="he-IL",
+            ssml_gender = texttospeech.SsmlVoiceGender.NEUTRAL,  # Male or Female voice.
+            name="he-IL-standard-B"  # This is a fast Standard voice. Explore others like A, C, D.
         )
+
+        audio_config = texttospeech.AudioConfig(
+            audio_encoding=texttospeech.AudioEncoding.MP3
+        )
+
+        response = tts_client.synthesize_speech(
+            request={"input": synthesis_input, "voice": voice, "audio_config": audio_config}
+        )
+
         audio_filename = f"tts_{call_obj.id}.mp3"
         audio_filepath = os.path.join(settings.MEDIA_ROOT, audio_filename)
-        tts_completion.stream_to_file(audio_filepath)
-        print("TTS audio generated at:", audio_filepath)
+        with open(audio_filepath, "wb") as out:
+            out.write(response.audio_content)
+            print("TTS audio generated at:", audio_filepath)
+
     except Exception as e:
         print("TTS error:", e)
+
+    # End timing
+    end_time = time.time()
+    total_time = end_time - start_time
+    print(f"Time taken for Google TTS generation: {total_time:.2f} seconds")
+    # start_time = time.time()
+    # try:
+    #     # Convert the AI response to audio using GPT-4o-Audio-Preview.
+    #     tts_completion = openai.audio.speech.create(
+    #         model="gpt-4o-mini-tts",
+    #         voice="alloy",
+    #         instructions=(
+    #             "Speak in Hebrew with a warm, upbeat, and reassuring tone. Use a natural Israeli accent "
+    #             "with clear, precise pronunciation. Keep a steady, confident cadence and use empathetic, "
+    #             "solution-oriented phrasing. Focus on positive language and next steps."
+    #         ),
+    #         input=ai_response
+    #     )
+    #     audio_filename = f"tts_{call_obj.id}.mp3"
+    #     audio_filepath = os.path.join(settings.MEDIA_ROOT, audio_filename)
+    #     tts_completion.stream_to_file(audio_filepath)
+    #     print("TTS audio generated at:", audio_filepath)
+    # except Exception as e:
+    #     print("TTS error:", e)
+
+    # # End timing
+    # end_time = time.time()
+    # total_time = end_time - start_time
+    # print(f"Time taken for GPT response and TTS generation: {total_time:.2f} seconds")
         
-@csrf_exempt
-def play_response(request, call_id):
-    """
-    Endpoint to check if GPT+TTS audio is ready.
-    If ready, play it; if not, pause and redirect to itself.
-    """
-    public_url = "https://0b22-94-188-131-83.ngrok-free.app"
-    call_obj = get_object_or_404(Call, id=call_id)
-    response = VoiceResponse()
-    
-    audio_filename = f"tts_{call_obj.id}.mp3"
-    audio_filepath = os.path.join(settings.MEDIA_ROOT, audio_filename)
-    
-    if os.path.exists(audio_filepath):
-        audio_url = f"{public_url}{settings.MEDIA_URL}{audio_filename}"
-        print("Playing GPT response audio:", audio_url)
-        response.play(audio_url)
-    else:
-        # Audio not ready yet—pause briefly and redirect back.
-        print("GPT response audio not ready yet. Waiting...")
-        response.pause(length=1)
-        response.redirect(request.build_absolute_uri())
-    
-    return HttpResponse(response.to_xml(), content_type="application/xml")
+
 
 @csrf_exempt
 @api_view(['POST'])
