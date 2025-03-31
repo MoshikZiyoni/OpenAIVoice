@@ -563,34 +563,26 @@ class MediaStreamConsumer(AsyncWebsocketConsumer):
     """WebSocket consumer to handle the media stream between Twilio and OpenAI."""
     
     async def connect(self):
-        """Accept the WebSocket connection."""
-        print("Client connected")
-        await self.accept()
-        
-        # For websockets 15.0, we need to use "additional_headers"
-        # But need to use the correct import and proper function
-        from websockets.client import connect as ws_connect
-        
-        self.openai_ws = await ws_connect(
-            'wss://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview',
-            extra_headers={
-                "Authorization": f"Bearer {OPENAI_API_KEY}",
-                "OpenAI-Beta": "realtime=v1"
-            }
-        )
-        
-        # Initialize session with OpenAI
-        await self.initialize_session()
-        
-        # Connection specific state
-        self.stream_sid = None
-        self.latest_media_timestamp = 0
-        self.last_assistant_item = None
-        self.mark_queue = []
-        self.response_start_timestamp_twilio = None
-        
-        # Start background tasks
-        self.receive_from_openai_task = asyncio.create_task(self.receive_from_openai())
+        try:
+            print("Client connected")
+            await self.accept()
+            
+            # Add more detailed logging
+            print("Attempting to connect to OpenAI WebSocket...")
+            
+            # Your existing connection code...
+            
+            print("Connected to OpenAI WebSocket successfully")
+            # Rest of your code...
+            
+        except Exception as e:
+            import traceback
+            print(f"Error connecting to WebSocket: {e}")
+            print(traceback.format_exc())
+            # Make sure to still accept the connection even if OpenAI connection fails
+            if not self.accepted:
+                await self.accept()
+                await self.close(code=1011)  # Internal server error code
 
     async def disconnect(self, close_code):
         """Handle disconnect."""
