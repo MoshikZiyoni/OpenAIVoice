@@ -66,8 +66,15 @@ INSTALLED_APPS = [
     'callAPI',
     'rest_framework',
     'corsheaders',
+    'channels',
     'whitenoise.runserver_nostatic',
 ]
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels.layers.InMemoryChannelLayer"  # For development only
+    }
+}
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',

@@ -11,7 +11,15 @@ from django.conf import settings
 settings.configure()
 load_dotenv()
 # ###he-IL-Wavenet-B # Removed comment about specific voice
-
+conversation= []
+conversation.append({
+    "role": "user",  # In Gemini, the initial prompt is also considered a user turn
+    "parts": [{"text": (
+        "Well, you're an AI assistant that speaks regular Hebrew, like, in a totally chill way "
+        "and with good vibes. Throw in some Israeli slang (like 'sababa') and keep a good atmosphere, bro."
+    )}]
+})
+        
 # Import Google Cloud libraries
 import google.generativeai as genai
 from google.oauth2 import service_account
@@ -51,14 +59,12 @@ try:
     start_time = time.time()
 
     # Generate AI response using Gemini (text)
-    response = gemini_model.generate_content(
-        "מה המצב אח שלי?",
-        generation_config=genai.types.GenerationConfig(
-            temperature=0.7,
-            max_output_tokens=100
-        )
+    
+    response = gemini_model.start_chat(
+        history=conversation
     )
-    ai_response = response.text.strip()
+    response.send_message("מה המצב?")
+    ai_response = response.last.text.strip()
     print("Generated ai_response:", ai_response)
     end_time = time.time()
     total_time = end_time - start_time
