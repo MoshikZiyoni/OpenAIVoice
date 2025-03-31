@@ -732,3 +732,13 @@ class MediaStreamConsumer(AsyncWebsocketConsumer):
         }
         await self.openai_ws.send(json.dumps(initial_conversation_item))
         await self.openai_ws.send(json.dumps({"type": "response.create"}))
+        
+        
+@csrf_exempt
+def test_connection(request):
+    import requests
+    try:
+        response = requests.get('https://api.openai.com')
+        return HttpResponse(f"Connection successful: {response.status_code}")
+    except Exception as e:
+        return HttpResponse(f"Connection failed: {str(e)}")
