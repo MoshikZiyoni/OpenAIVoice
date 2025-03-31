@@ -14,6 +14,5 @@ urlpatterns = [
     # path('incoming-call/', views.incoming_call, name='incoming_call'),
     path('incoming-call/', views.handle_incoming_call, name='incoming-call'),
     path('', views.index_page, name='index'),
-    path('test_connection/', views.test_connection, name='test_connection'),
     
 ]+ static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
