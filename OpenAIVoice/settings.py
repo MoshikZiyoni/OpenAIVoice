@@ -203,3 +203,35 @@ CELERY_RESULT_BACKEND = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
+
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'unique-snowflake',
+        'KEY_PREFIX': '',  # Set this to an empty string
+        'VERSION': None,
+
+    }
+}
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': 'INFO',  # Log INFO and above (INFO, WARNING, ERROR, CRITICAL)
+            'propagate': True,
+        },
+        'callAPI': {  # Replace 'your_app_name' with the name of your app
+            'handlers': ['console'],
+            'level': 'INFO',  # Log INFO and above
+            'propagate': False,
+        },
+    },
+}

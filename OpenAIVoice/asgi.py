@@ -32,7 +32,7 @@ import os
 from django.core.asgi import get_asgi_application
 from channels.routing import ProtocolTypeRouter, URLRouter
 from channels.auth import AuthMiddlewareStack
-from django.urls import path
+from django.urls import path,re_path
 from callAPI.views import MediaStreamConsumer
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'OpenAIVoice.settings')
@@ -43,7 +43,7 @@ application = ProtocolTypeRouter({
     "http": django_asgi_app,
     "websocket": AuthMiddlewareStack(
         URLRouter([
-            path('media-stream', MediaStreamConsumer.as_asgi()),
+            re_path(r'media-stream', MediaStreamConsumer.as_asgi()),
         ])
     ),
 })

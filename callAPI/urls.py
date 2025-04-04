@@ -13,6 +13,8 @@ urlpatterns = [
     # path('process_audio/', views.process_audio, name='process_audio'),
     # path('incoming-call/', views.incoming_call, name='incoming_call'),
     path('incoming-call/', views.handle_incoming_call, name='incoming-call'),
+    path('outbound-call/', views.make_outbound_call, name='outbound-call'),
     path('', views.index_page, name='index'),
-    
+    path('call-status/', views.call_status_callback, name='call_status_callback'),
+
 ]+ static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
