@@ -1,509 +1,3 @@
-# # callAPI/views.py
-
-# import base64
-# import json
-# import os
-# import random
-# import time
-# import concurrent
-# from django.shortcuts import get_object_or_404
-# from django.http import HttpResponse, JsonResponse
-# from django.views.decorators.csrf import csrf_exempt
-# from django.conf import settings
-# import requests
-# from twilio.rest import Client
-# from twilio.twiml.voice_response import VoiceResponse, Gather,Stream
-# from .models import Call, ConversationTurn
-# from rest_framework.decorators import api_view
-# import openai
-# from dotenv import load_dotenv
-# import threading
-# import google.generativeai as genai
-# from google.cloud import texttospeech
-# # # Configure Google Cloud Text-to-Speech client
-# from google.oauth2 import service_account
-
-# audio_generation_complete = threading.Event()
-
-
-# # Get the JSON string from the environment variable
-# service_account_info_str = os.getenv('GOOGLE_SERVICE_ACCOUNT_INFO')
-
-# if service_account_info_str:
-#     try:
-#         # Parse the JSON string into a dictionary
-#         service_account_info = json.loads(service_account_info_str)
-
-#         # Create credentials from the dictionary
-#         credentials = service_account.Credentials.from_service_account_info(service_account_info)
-
-#         # Initialize the TextToSpeechClient with the credentials
-#         tts_client = texttospeech.TextToSpeechClient(credentials=credentials)
-#     except Exception as e:
-#         print("Error creating credentials:", e)
-#         tts_client = None
-
-# # Configure Google Gemini API
-# GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
-# genai.configure(api_key=GOOGLE_API_KEY)
-# load_dotenv()
-
-# # Set your OpenAI API key
-# OPENAI_API_KEY= settings.OPENAI_API_KEY
-# openai.api_key = OPENAI_API_KEY
-# # Initialize Twilio client
-# twilio_client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
-
-
-# @csrf_exempt
-# @api_view(['POST'])
-# def make_call(request):
-#     """
-#     Initiate an outbound call by creating a Call object and using Twilio's API.
-#     """
-#     if request.method == 'POST':
-#         phone_number = request.data.get('phone_number')
-#         print("phone_number", phone_number)
-#         TWILIO_PHONE_NUMBER_NEW = os.getenv('TWILIO_PHONE_NUMBER_NEW')
-#         print(TWILIO_PHONE_NUMBER_NEW)
-#         print(type(TWILIO_PHONE_NUMBER_NEW))
-#         if not phone_number:
-#             return JsonResponse({'error': 'Phone number required'}, status=400)
-        
-#         # Create a new call record
-#         call_obj = Call.objects.create(
-#             phone_number=phone_number,
-#             caller_id=settings.TWILIO_PHONE_NUMBER_NEW
-#         )
-#         print("New call obg creadted")
-#         # Use PUBLIC_URL from environment for a publicly accessible callback URL.
-#         public_url = "https://workforce-wines-independently-whether.trycloudflare.com/"
-#         # public_url = "https://web-production-7204.up.railway.app"
-#         if public_url:
-#             callback_url = f'{public_url}/api/call/{call_obj.id}/twiml/'
-#             status_callback_url = f'{public_url}/api/call/{call_obj.id}/status/'
-#         else:
-#             # Fallback: This will work only if your server is publicly accessible.
-#             callback_url = request.build_absolute_uri(f'/api/call/{call_obj.id}/twiml/')
-#             status_callback_url = request.build_absolute_uri(f'/api/call/{call_obj.id}/status/')
-#         print("Start calling")
-#         if not os.path.exists(settings.MEDIA_ROOT):
-#             os.makedirs(settings.MEDIA_ROOT, exist_ok=True)  # Safe creation
-
-#         # try:
-#         #     tts_completion = openai.audio.speech.create(
-#         #         model="gpt-4o-mini-tts",
-#         #         voice="alloy",  # Optionally remove if you prefer the default voice.
-#         #         instructions=(
-#         #             "Speak in Hebrew with a warm, upbeat, and reassuring tone. Use a natural Israeli accent "
-#         #             "with clear, precise pronunciation. Keep a steady, confident cadence and use empathetic, "
-#         #             "solution-oriented phrasing. Focus on positive language and next steps."
-#         #         ),
-#         #         input="היי אני העוזר הוירטואלי של מושיק"
-#         #     )
-#         #     welcome_audio_filename = f"tts'_welcome_{call_obj.id}.mp3"
-#         #     audio_filepath = os.path.join(settings.MEDIA_ROOT, welcome_audio_filename)
-#         #     tts_completion.stream_to_file(audio_filepath)
-            
-#         # except Exception as e:
-#         #     print("TTS error:", e)
-#         import shutil
-
-#         # Ensure ummm.wav exists in MEDIA_ROOT
-#         umm_filepath = os.path.join(settings.MEDIA_ROOT, "ummm.wav")
-#         if not os.path.exists(umm_filepath):
-#             source_path = os.path.join(os.path.dirname(__file__), "static", "ummm.wav")  # Adjust source path
-#             shutil.copy(source_path, umm_filepath)
-            
-#         haha_filepath = os.path.join(settings.MEDIA_ROOT, "haha.wav")
-#         if not os.path.exists(haha_filepath):
-#             source_path = os.path.join(os.path.dirname(__file__), "static", "haha.wav")  # Adjust source path
-#             shutil.copy(source_path, haha_filepath)
-
-#         # Ensure Hey.wav exists in MEDIA_ROOT
-#         hey_filepath = os.path.join(settings.MEDIA_ROOT, "Hey.wav")
-#         if not os.path.exists(hey_filepath):
-#             source_path = os.path.join(os.path.dirname(__file__), "static", "Hey.wav")  # Adjust source path
-#             shutil.copy(source_path, hey_filepath)
-#         try:
-#             umm_filepath = os.path.join(settings.MEDIA_ROOT, "ummm.wav")
-#             if os.path.exists(umm_filepath):
-#                 print(f"File exists at: {umm_filepath}")
-#             else:
-#                 print("File not found!")
-#         except Exception as e:
-#             print("Error in ummm.wav file:", e)
-        
-#         try:
-#             haha_filepath = os.path.join(settings.MEDIA_ROOT, "haha.wav")
-#             if os.path.exists(haha_filepath):
-#                 print(f"File exists at: {haha_filepath}")
-#             else:
-#                 print("File not found!")
-#         except Exception as e:
-#             print("Error in haha.wav file:", e)
-            
-#         try:
-#             hey_filepath = os.path.join(settings.MEDIA_ROOT, "Hey.wav")
-#             if os.path.exists(hey_filepath):
-#                 print(f"File exists at: {hey_filepath}")
-#             else:
-#                 print("File not found!")
-#         except Exception as e:
-#             print("Error in Hey.wav file:", e)
-       
-#         if os.path.exists(settings.MEDIA_ROOT):
-#             print("Files in MEDIA_ROOT:")
-#             for file_name in os.listdir(settings.MEDIA_ROOT):
-#                 print(file_name)
-#         else:
-#             print("MEDIA_ROOT directory does not exist:", settings.MEDIA_ROOT)
-        
-#         # Initiate the outbound call using Twilio
-#         try:
-            
-#             twilio_call = twilio_client.calls.create(
-#                 to=phone_number,
-#                 from_=TWILIO_PHONE_NUMBER_NEW,
-#                 url=callback_url,
-#                 status_callback=status_callback_url,
-#                 status_callback_event=['completed', 'failed']
-#             )
-#         except Exception as e:
-#             return JsonResponse({'error': str(e)}, status=500)
-        
-#         # Save the Twilio Call SID
-#         call_obj.call_sid = twilio_call.sid
-#         call_obj.save()
-        
-#         return JsonResponse({'message': 'Call initiated', 'call_id': call_obj.id})
-#     else:
-#         return JsonResponse({'error': 'POST request required'}, status=400)
-
-
-# @csrf_exempt
-# def call_twiml(request, call_id):
-#     """
-#     Generate TwiML for the ongoing call.
-#     Immediately play a filler ("ummm…") and concurrently start generating the GPT response.
-#     Then, redirect to the play_response endpoint to play the generated GPT answer audio.
-#     """
-#     public_url = "https://workforce-wines-independently-whether.trycloudflare.com/"
-#     # public_url = "https://web-production-7204.up.railway.app"
-#     call_obj = get_object_or_404(Call, id=call_id)
-#     response = VoiceResponse()
-    
-#     speech_result = request.POST.get('SpeechResult') or request.GET.get('SpeechResult')
-#     # partial_speech = request.POST.get('PartialSpeechResult') or request.GET.get('PartialSpeechResult')
-    
-#     # if partial_speech:
-#     #     print("Partial speech received:", partial_speech)
-    
-#     if speech_result:
-#         print("User said:", speech_result)
-#         ConversationTurn.objects.create(call=call_obj, text=speech_result, is_ai=False)
-        
-#         # Build conversation history.
-#         # conversation = [{
-#         #     "role": "system",
-#         #     "content": (
-#         #         "Well, you're an AI assistant that speaks regular Hebrew, like, in a totally chill way "
-#         #         "and with good vibes. Throw in some Israeli slang (like 'sababa') and keep a good atmosphere, bro."
-#         #     )
-#         # }]
-#         # for turn in call_obj.conversation.all():
-#         #     role = "assistant" if turn.is_ai else "user"
-#         #     conversation.append({"role": role, "content": turn.text})
-#         conversation= []
-#         conversation.append({
-#             "role": "user",  
-#             "parts": [{"text": (
-#                 "You're a phone call agent that speaks regular Hebrew in a friendly and professional tone. "
-#                 "Maintain a calm and helpful demeanor, and use common Israeli slang (like 'sababa') where appropriate to keep the conversation approachable and positive. "
-#                 "Avoid using emojis in your responses."
-#             )}]
-#         })
-#         for turn in call_obj.conversation.all():
-#             role = "model" if turn.is_ai else "user"  # Gemini uses "model" for AI
-#             conversation.append({"role": role, "parts": [{"text": turn.text}]})
-        
-        
-        
-        
-#         # Immediately play the filler audio.
-#         try:
-#             filler_choices = ["ummm.wav", "haha.wav"]
-#             chosen_filler = random.choice(filler_choices)
-#             filler_url = f"{public_url}/media/{chosen_filler}"
-#             print("Playing filler audio:", filler_url)
-#             response.play(filler_url)
-#         except Exception as e:
-#             print("Filler audio error:", e)
-#             response.say("ummm...")
-#         # Start background thread to generate GPT response and TTS audio.
-#         with concurrent.futures.ThreadPoolExecutor() as executor:
-#             future = executor.submit(generate_gpt_audio, call_obj, conversation, speech_result)
-#             gemini_text = future.result()
-#             response.say(voice="Google.he-IL-Standard-B",message=gemini_text)
-#             gather = Gather(
-#             speechModel="default",
-#             input='speech',
-#             language='he-IL',
-#             action=request.build_absolute_uri(),
-#             timeout=1,
-#             speechTimeout=1,
-#             hints="שלום, מה המצב, הלו, היי"
-#         )
-#         response.append(gather)
-#         # timeout = 10  # Maximum wait time in seconds
-#         # if audio_generation_complete.wait(timeout):
-#         #     audio_filename = f"tts_{call_obj.id}.mp3"
-#         #     try:
-#         #         audio_url = f"{public_url}/media/{audio_filename}"
-#         #         print("Playing generated audio:", audio_url)
-#         #         response.play(audio_url)
-#         #     except Exception as e:
-#         #         print("Error playing audio:", e)
-#         #         response.say("מצטער, אירעה שגיאה בהשמעת התגובה.", language="he-IL")
-    
-#     else:
-#         # response.pause(length=1)
-#         try:
-#             welcome_filename = "Hey.wav"
-#             welcome_url = f"{public_url}/media/{welcome_filename}"
-#             print("Playing welcome audio:", welcome_url)
-#             response.play(welcome_url)
-#         except Exception as e:
-#             print("Welcome audio error:", e)
-#             response.say("Hi")
-    
-#     # Set up a <Gather> element for continuous speech capture.
-#     gather = Gather(
-#         speechModel="default",
-#         input='speech',
-#         language='he-IL',
-#         action=request.build_absolute_uri(),
-#         timeout=1,
-#         speechTimeout=1,
-#         hints="שלום, מה המצב, הלו, היי"
-#     )
-#     response.append(gather)
-#     response.redirect(request.build_absolute_uri())
-    
-#     return HttpResponse(response.to_xml(), content_type='application/xml')
-# def generate_gpt_audio(call_obj, conversation,speech_result):
-#     # """
-#     # Function to generate the GPT response and TTS audio.
-#     # This runs in a background thread.
-#     # """
-#     # try:
-#     #     # Start timing
-#     #     start_time = time.time()
-
-#     #     # Generate AI response using ChatCompletion (text)
-#     #     completion = openai.chat.completions.create(
-#     #         model="gpt-4o-mini",
-#     #         messages=conversation,
-#     #         temperature=0.7,
-#     #         max_tokens=100
-#     #     )
-#     #     ai_response = completion.choices[0].message.content.strip()
-#     #     print("Generated ai_response:", ai_response)
-#     # except Exception as e:
-#     #     print("Error with GPT response:", e)
-#     #     ai_response = "מצטער איני יכול לעזור כרגע"
-    
-#     gemini_model_name = "gemini-2.0-flash-lite"
-#     generation_config = {
-#                 "temperature": 1,
-#                 "top_p": 1,
-#                 "top_k": 1,
-#                 "max_output_tokens": 2048,
-#             }
-#     gemini_model = genai.GenerativeModel(gemini_model_name,
-#                                          generation_config=generation_config)
-
-#     """
-#     Function to generate the Gemini response and TTS audio.
-#     This runs in a background thread.
-#     """
-#     try:
-#         # Start timing for text generation
-#         start_time = time.time()
-#         print("last converstion: ",conversation)
-#         # Generate AI response using Gemini (text)
-#         convo = gemini_model.start_chat(
-#             history=conversation,  
-#         )
-#         convo.send_message(speech_result)
-        
-#         ai_response = convo.last.text.strip()
-#         print("Generated ai_response:", ai_response)
-#         end_time = time.time()
-#         total_time = end_time - start_time
-#         print(f"Time taken for Gemini response: {total_time:.2f} seconds")
-#     except Exception as e:
-#         print("Error with Gemini response:", e)
-#         ai_response = "מצטער איני יכול לעזור כרגע"
-    
-    
-#     # Save the AI response.
-#     ConversationTurn.objects.create(call=call_obj, text=ai_response, is_ai=True)
-#     return ai_response
-#     # start_time = time.time()
-    
-#     # try:
-#     #     # Convert the AI response to audio using Google Cloud Text-to-Speech.
-#     #     synthesis_input = texttospeech.SynthesisInput(text=ai_response)
-
-#     #     # Choose a fast Standard voice for Hebrew (you might need to explore other Standard voices)
-#     #     voice = texttospeech.VoiceSelectionParams(
-#     #         language_code="he-IL",
-#     #         ssml_gender = texttospeech.SsmlVoiceGender.NEUTRAL,  # Male or Female voice.
-#     #         name="he-IL-standard-B"  # This is a fast Standard voice. Explore others like A, C, D.
-#     #     )
-
-#     #     audio_config = texttospeech.AudioConfig(
-#     #         audio_encoding=texttospeech.AudioEncoding.MP3
-#     #     )
-
-#     #     response = tts_client.synthesize_speech(
-#     #         request={"input": synthesis_input, "voice": voice, "audio_config": audio_config}
-#     #     )
-
-#     #     audio_filename = f"tts_{call_obj.id}.mp3"
-#     #     audio_filepath = os.path.join(settings.MEDIA_ROOT, audio_filename)
-#     #     with open(audio_filepath, "wb") as out:
-#     #         out.write(response.audio_content)
-#     #         print("TTS audio generated at:", audio_filepath)
-#         # audio_generation_complete.set()
-#     # except Exception as e:
-#     #     audio_generation_complete.set()
-#     #     print("TTS error:", e)
-
-#     # End timing
-#     end_time = time.time()
-#     total_time = end_time - start_time
-#     print(f"Time taken for Google TTS generation: {total_time:.2f} seconds")
-#     # start_time = time.time()
-#     # try:
-#     #     # Convert the AI response to audio using GPT-4o-Audio-Preview.
-#     #     tts_completion = openai.audio.speech.create(
-#     #         model="gpt-4o-mini-tts",
-#     #         voice="alloy",
-#     #         instructions=(
-#     #             "Speak in Hebrew with a warm, upbeat, and reassuring tone. Use a natural Israeli accent "
-#     #             "with clear, precise pronunciation. Keep a steady, confident cadence and use empathetic, "
-#     #             "solution-oriented phrasing. Focus on positive language and next steps."
-#     #         ),
-#     #         input=ai_response
-#     #     )
-#     #     audio_filename = f"tts_{call_obj.id}.mp3"
-#     #     audio_filepath = os.path.join(settings.MEDIA_ROOT, audio_filename)
-#     #     tts_completion.stream_to_file(audio_filepath)
-#     #     print("TTS audio generated at:", audio_filepath)
-#     # except Exception as e:
-#     #     print("TTS error:", e)
-
-#     # # End timing
-#     # end_time = time.time()
-#     # total_time = end_time - start_time
-#     # print(f"Time taken for GPT response and TTS generation: {total_time:.2f} seconds")
-        
-
-
-# @csrf_exempt
-# @api_view(['POST'])
-# def call_status(request, call_id):
-#     """
-#     Handle call status updates from Twilio.
-#     """
-#     call_obj = get_object_or_404(Call, id=call_id)
-#     call_status = request.POST.get('CallStatus')
-#     if call_status:
-#         call_obj.status = call_status
-#         call_obj.save()
-#     return HttpResponse("Status updated")
-
-
-# def get_calls(request):
-#     """
-#     API endpoint to list all calls.
-#     """
-#     calls = Call.objects.all().values()
-#     return JsonResponse(list(calls), safe=False)
-
-
-# def get_conversation(request, call_id):
-#     """
-#     API endpoint to retrieve the conversation for a specific call.
-#     """
-#     call_obj = get_object_or_404(Call, id=call_id)
-#     conversation = list(call_obj.conversation.all().values())
-#     return JsonResponse(conversation, safe=False)
-
-
-
-# @csrf_exempt
-# def partial_callback(request):
-#     """Handle partial speech results from Twilio."""
-#     print("Request POST data: %s", request.POST)
-#     partial_speech = request.POST.get('PartialSpeechResult')
-#     if partial_speech:
-#         print("Partial speech detected:", partial_speech)
-#         # Optionally: Process partial text here (e.g., send to OpenAI early)
-#     return HttpResponse(status=200)  # Empty response (TwiML not required)
-
-
-# @csrf_exempt
-# def incoming_call(request):
-#     """
-#     Handle an incoming call by:
-#     1. Greeting the caller.
-#     2. Using Twilio's Gather to collect user input (speech or DTMF).
-#     3. Streaming call audio to a WebSocket endpoint for real-time transcription using OpenAI Whisper.
-#     4. Keeping the call open with a pause.
-#     """
-#     public_url = "https://guided-sun-individual-sentence.trycloudflare.com"
-#     response = VoiceResponse()
-
-#     # Greet the caller.
-#     response.say("Welcome, please wait while we connect you to our AI assistant.")
-#     response.pause(length=1)
-
-#     # Use Gather to collect user input.
-#     gather = response.gather(
-#         input="speech dtmf",
-#         action=f"{public_url}/process_input",  # Callback URL to process user input.
-#         method="POST",
-#         timeout=5,
-#         num_digits=1
-#     )
-#     gather.say("Please say something or press a key to continue.")
-
-#     # Stream the audio to the WebSocket endpoint where your AI processing occurs.
-#     stream_url = f"wss://guided-sun-individual-sentence.trycloudflare.com/wss/openai_voice/"
-#     stream = Stream(url=stream_url)
-#     response.append(stream)
-
-#     # Add a long pause to keep the call active while processing happens.
-#     response.pause(length=60)
-
-#     # Prepend the XML header required by Twilio.
-#     twiml_response = '<?xml version="1.0" encoding="UTF-8"?>' + str(response)
-#     return HttpResponse(twiml_response, content_type="application/xml")
-
-
-
-
-
-
-
-
-
-
-
-
 # callAPI/views.py
 
 import datetime
@@ -512,6 +6,8 @@ import time
 from urllib.parse import parse_qs
 import django
 import urllib
+
+# from callAPI.summary import handle_summary
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'OpenAIVoice.settings')
 django.setup()
@@ -529,7 +25,11 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from .models import Call
 from asgiref.sync import sync_to_async
 from django.core.cache import cache
-from django.utils.timezone import now
+from django.db.models import Count, Avg, F, Q,Sum
+from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
+
+from rest_framework.response import Response
+
 import logging
 logger = logging.getLogger(__name__)
 
@@ -541,10 +41,30 @@ twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 # Configuration
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 SYSTEM_MESSAGE = ("""
-                  "Start the conversation by saying: 'הגעת לעסק של מושיק, במה אוכל לעזור?'"
                 Speak in Hebrew with a warm, upbeat, and reassuring tone. Use a natural Israeli accent
                with clear, precise pronunciation. Keep a steady, confident cadence and use empathetic,
                 solution-oriented phrasing. Focus on positive language and next steps.
+                        "אתה עוזר קולי הפועל בשם ערן, מומחה לשיווק דיגיטלי. זוהי שיחת יוזמה שאנחנו מבצעים. 
+                        התחל בהצגה עצמית קצרה: 'שלום, מדבר הסוכן של ערן, מומחה לשיווק דיגיטלי. האם זה זמן נוח לשיחה קצרה?'
+                        אם הם אומרים שלא, הצע לחזור בזמן אחר ושאל מתי יהיה נוח. אם הם מסכימים לשוחח, הצג את השירותים שאתה מציע:
+                        אסטרטגיה שיווקית לעסקים
+                        ניהול תוכן לרשתות חברתיות
+                        סרטוני וידאו שיווקיים
+                        קמפיינים ממומנים
+                        עיצוב גרפי
+                        בניית אתרים ודפי נחיתה
+                        אוטומציות שיווק ואימייל
+                        כתיבת תוכן שיווקי
+                        אם יש עניין, שאל: מה התחום של העסק שלך? במה היית רוצה עזרה? האם עבדת בעבר עם משווק דיגיטלי?
+                        אם יש עניין ממשי, אמור: 'מעולה, אני רוצה לשמוע עוד על העסק שלך ואיך אני יכול לעזור. אצטרך כמה פרטים:' 
+                        שם מלא
+                        מספר טלפון להמשך שיחה
+                        אימייל
+                        תחום העסק ונושא הפנייה
+                        זמן מועדף לשיחת המשך מעמיקה יותר
+                        הנחיה חשובה: אם הפונה שואל שאלה שאינה רלוונטית, השב: 'אין לי תשובה מלאה לשאלה זו כרגע, אך אשמח לחזור אליך עם מידע מפורט בשיחה הבאה.'
+                        הקפד לנהל שיחה אנושית, זורמת, ומתחשבת ככל האפשר. בסיום השיחה, הודה להם על זמנם והדגש שתחזור אליהם בקרוב עם מידע נוסף."
+                        
                         """
 )
 VOICE = 'alloy'
@@ -679,6 +199,9 @@ class MediaStreamConsumer(AsyncWebsocketConsumer):
         
         if hasattr(self, 'receive_from_openai_task'):
             self.receive_from_openai_task.cancel()
+        
+        # if self.call_sid:
+        #     handle_summary(self.call_sid)
             
     async def receive(self, text_data):
         """Handle incoming messages from Twilio."""
@@ -844,7 +367,8 @@ class MediaStreamConsumer(AsyncWebsocketConsumer):
                 "modalities": ["text", "audio"],
                 "temperature": 0.8,
                  "input_audio_transcription": {
-                "model": "gpt-4o-mini-transcribe",
+                # "model": "gpt-4o-mini-transcribe",
+                "model": "whisper-1",
                 "language": "he",  # Language in ISO-639-1 format (Hebrew)
                 "prompt": "Transcribe Hebrew speech accurately"  # Optional prompt for improved guidance
             }
@@ -898,8 +422,8 @@ def make_outbound_call(request):
         
         # Get host from request for webhook URL
         # host = request.get_host()
-        # host = 'loves-crown-survey-ran.trycloudflare.com'
-        host = 'web-production-7204.up.railway.app'
+        host = 'fitting-hazardous-accordance-weather.trycloudflare.com'
+        # host = 'web-production-7204.up.railway.app'
         # Create the TwiML for the outbound call
         response = VoiceResponse()
         connect = Connect()
@@ -1015,3 +539,134 @@ class OutboundMediaStreamConsumer(MediaStreamConsumer):
         }
         await self.openai_ws.send(json.dumps(initial_conversation_item))
         await self.openai_ws.send(json.dumps({"type": "response.create"}))
+        
+        
+        
+        
+@require_http_methods(["GET"])
+def get_calls(request):
+    """
+    Get a paginated list of calls with optional filtering.
+    """
+    # Get query parameters for filtering
+    direction = request.GET.get('direction', '')
+    status = request.GET.get('status', '')
+    search = request.GET.get('search', '')
+    page = request.GET.get('page', 1)
+    limit = request.GET.get('limit', 10)
+    
+    # Start with all calls
+    calls_query = Call.objects.all()
+    
+    # Apply filters if provided
+    if direction:
+        calls_query = calls_query.filter(direction=direction)
+    if status:
+        calls_query = calls_query.filter(status=status)
+    if search:
+        calls_query = calls_query.filter(
+            Q(phone_number__contains=search) | 
+            Q(caller_id__contains=search)
+        )
+    
+    # Order by most recent first
+    calls_query = calls_query.order_by('-created_at')
+    
+    # Paginate results
+    paginator = Paginator(calls_query, limit)
+    try:
+        calls_page = paginator.page(page)
+    except PageNotAnInteger:
+        calls_page = paginator.page(1)
+    except EmptyPage:
+        calls_page = paginator.page(paginator.num_pages)
+    
+    # Format response
+    calls_data = []
+    for call in calls_page:
+        calls_data.append({
+            'id': call.id,
+            'phone_number': call.phone_number,
+            'caller_id': call.caller_id,
+            'status': call.status,
+            'direction': call.direction,
+            'total_duration': call.total_duration,
+            'call_sid': call.call_sid,
+            'formatted_created_at': call.formatted_created_at(),
+            'formatted_updated_at': call.formatted_updated_at(),
+        })
+    
+    return JsonResponse({
+        'results': calls_data,
+        'count': paginator.count,
+        'total_pages': paginator.num_pages,
+        'current_page': int(page)
+    })
+
+@require_http_methods(["GET"])
+def get_call_detail(request, call_id):
+    """
+    Get detailed information about a specific call.
+    """
+    try:
+        call = Call.objects.get(id=call_id)
+        
+        call_data = {
+            'id': call.id,
+            'phone_number': call.phone_number,
+            'caller_id': call.caller_id,
+            'status': call.status,
+            'direction': call.direction,
+            'total_duration': call.total_duration,
+            'call_sid': call.call_sid,
+            'formatted_created_at': call.formatted_created_at(),
+            'formatted_updated_at': call.formatted_updated_at(),
+            'conversation': call.conversation,
+        }
+        
+        return JsonResponse(call_data)
+    except Call.DoesNotExist:
+        return JsonResponse({'error': 'Call not found'}, status=404)
+
+@require_http_methods(["GET"])
+def get_call_stats(request):
+    """
+    Get statistics about the calls.
+    """
+    stats = {
+        'totalCalls': Call.objects.count(),
+        'incomingCalls': Call.objects.filter(direction='in').count(),
+        'outgoingCalls': Call.objects.filter(direction='out').count(),
+        'completedCalls': Call.objects.filter(status='completed').count(),
+        'failedCalls': Call.objects.filter(status='failed').count(),
+        'inProgressCalls': Call.objects.filter(status='in_progress').count(),
+        'averageDuration': Call.objects.aggregate(avg_duration=Avg('total_duration'))['avg_duration'] or 0,
+        'totalDuration': Call.objects.aggregate(total_duration=Sum('total_duration'))['total_duration'] or 0,
+
+    }
+    
+    return JsonResponse(stats)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def initiate_outbound_call(request):
+    """
+    Initiate an outbound call from the React frontend.
+    This is a wrapper around the existing make_outbound_call function but with
+    authentication and additional validation.
+    """
+    # The authentication would typically be handled by Auth0
+    # in the frontend, so here we just need to validate the request
+    
+    try:
+        data = json.loads(request.body)
+        
+        # Basic validation
+        if not data.get('phone_number'):
+            return JsonResponse({'error': 'Phone number is required'}, status=400)
+        
+        # Call the existing function to make the outbound call
+        return make_outbound_call(request)
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
