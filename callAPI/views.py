@@ -4,6 +4,7 @@ import datetime
 import os
 import time
 from urllib.parse import parse_qs
+import uuid
 import django
 import urllib
 
@@ -27,7 +28,7 @@ from asgiref.sync import sync_to_async
 from django.core.cache import cache
 from django.db.models import Count, Avg, F, Q,Sum
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
-
+import pandas as pd
 from rest_framework.response import Response
 
 import logging
@@ -124,22 +125,38 @@ class MediaStreamConsumer(AsyncWebsocketConsumer):
         await self.accept()
         self.call_sid = None
         self.call_start_time = time.time()
+        logger.info(f"WebSocket path: {self.scope.get('path')}")
+        logger.info(f"WebSocket raw query string: {self.scope.get('query_string')}")
+        query_string = self.scope.get('query_string', b'').decode()
+        logger.info(f"WebSocket decoded query string: {query_string}")
+        query_params = parse_qs(query_string)
+        batch_id = query_params.get('batch_id', [None])[0]
+        logger.info(f"WebSocket connected with batch_id: {batch_id}")
         try:
-            # Iterate over all keys in the cache to find the one starting with "call_sid_"
+            # Look for the most recent call_sid in the cache
             cache_data = cache._cache
-            for key in cache_data.keys():
-                logger.debug(f"Cache key: {key}")
-                self.call_sid = key
-                cache.clear()
+            for key in list(cache_data.keys()):  # Use list() to avoid iteration issues
+                if isinstance(key, str):
+                    logger.debug(f"Cache key: {key}")
+                    self.call_sid = key
+                    # Don't clear the cache here as other connections might need it
+            
+            # If no call_sid found, try to get the most recent active call from database
+            if not self.call_sid:
+                call = await sync_to_async(lambda: Call.objects.filter(
+                    status__in=['in-progress', 'ringing', 'queued', 'initiated']
+                ).order_by('-created_at').first())()
+                
+                if call:
+                    self.call_sid = call.call_sid
+                    logger.info(f"Retrieved call_sid from database: {self.call_sid}")
         except Exception as e:
-            logger.error(f"Error retrieving call_sid from cache: {e}")   
-          
-        
+            logger.error(f"Error retrieving call_sid: {e}")
+            
         if self.call_sid:
             logger.info(f"Retrieved call_sid from cache: {self.call_sid}")
         else:
-            
-            logger.warning("call_sid not found in cache, using default")
+            logger.warning("call_sid not found, using default")
         # For websockets 15.0, we need to use "additional_headers"
         # But need to use the correct import and proper function
         
@@ -172,36 +189,67 @@ class MediaStreamConsumer(AsyncWebsocketConsumer):
         call_duration = time.time() - self.call_start_time
         formatted_duration = round(call_duration, 2)  # Round to 2 decimal places
         logger.info(f"Call duration: {formatted_duration} seconds")
-         # Update Call model with the calculated duration
+        
+        # Update Call model with the calculated duration
         if self.call_sid:
             try:
-                call = await sync_to_async(Call.objects.get)(call_sid=self.call_sid)
+                # Extract the actual call_sid or batch_id from the stored value
+                # This handles both normal call_sid and the unusual format with ':None:' prefix
+                actual_sid = self.call_sid.split(':')[-1] if ':' in self.call_sid else self.call_sid
+                
+                # Try to find the call by call_sid first
+                try:
+                    call = await sync_to_async(Call.objects.get)(call_sid=actual_sid)
+                except Call.DoesNotExist:
+                    # If not found by call_sid, try to find the most recent call with matching batch_id
+                    # (if the value appears to be a UUID)
+                    if len(actual_sid) > 30:  # Rough check if it looks like a UUID
+                        try:
+                            # Get the most recent call that hasn't been updated yet
+                            call = await sync_to_async(lambda: Call.objects.filter(
+                                call_sid__in=twilio_client.calls.list(status='completed', limit=10)
+                            ).order_by('-created_at').first())()
+                            
+                            if not call:
+                                logger.warning(f"No matching call found for update with sid: {actual_sid}")
+                                return
+                        except Exception as e:
+                            logger.error(f"Error finding recent call: {e}")
+                            return
+                    else:
+                        logger.warning(f"No valid call_sid or batch_id found: {actual_sid}")
+                        return
+                    
+                # Update the call record
                 call.total_duration = formatted_duration
                 call.status = 'completed'
-                for user_speech, ai_response in zip(
-                    self.conversation_data["user_speech"], self.conversation_data["ai_responses"]
-                ):
-                    await sync_to_async(call.add_conversation_turn)(
-                        text=user_speech,
-                        is_ai=False,
-                    )
-                    await sync_to_async(call.add_conversation_turn)(
-                        text=ai_response,
-                        is_ai=True,
-                    )
+                
+                # Save conversation data if available
+                if hasattr(self, 'conversation_data'):
+                    for user_speech, ai_response in zip(
+                        self.conversation_data.get("user_speech", []), 
+                        self.conversation_data.get("ai_responses", [])
+                    ):
+                        await sync_to_async(call.add_conversation_turn)(
+                            text=user_speech,
+                            is_ai=False,
+                        )
+                        await sync_to_async(call.add_conversation_turn)(
+                            text=ai_response,
+                            is_ai=True,
+                        )
+                    
                 await sync_to_async(call.save)()  # Save changes asynchronously
+                logger.info(f"Successfully updated call with duration: {formatted_duration}")
                 
             except Exception as e:
                 logger.error(f"Error updating call duration: {e}")
-                
+        
         if hasattr(self, 'openai_ws') and self.openai_ws.open:
             await self.openai_ws.close()
         
         if hasattr(self, 'receive_from_openai_task'):
             self.receive_from_openai_task.cancel()
-        
-        # if self.call_sid:
-        #     handle_summary(self.call_sid)
             
     async def receive(self, text_data):
         """Handle incoming messages from Twilio."""
@@ -492,56 +540,59 @@ def call_status_callback(request):
     
     return HttpResponse(status=200)
 
-class OutboundMediaStreamConsumer(MediaStreamConsumer):
-    """WebSocket consumer specifically for outbound calls."""
+@csrf_exempt
+@require_http_methods(["POST"])
+def call_status_callback_outbound(request):
+    """
+    Handle Twilio call status callbacks.
+    This endpoint will receive updates about the call status.
+    """
+    call_sid = request.POST.get('CallSid')
+    call_status = request.POST.get('CallStatus')
+    phone_number = request.POST.get("To")
+    caller_id = request.POST.get("From")
+    batch_id = request.GET.get("batch_id")  # Pass batch_id when initiating the call
+    logger.info(f"Call status update received: {call_status} for CallSid: {call_sid}")
+
+    if not call_sid:
+        return JsonResponse({"error": "CallSid is required"}, status=400)
     
-    async def connect(self):
-        """Accept the WebSocket connection."""
-        logger.info("Outbound call client connected")
-        await super().connect()
-        self.call_start_time = time.time()
-    async def send_initial_conversation_item(self):
-        """Send initial conversation item for outbound calls - typically a greeting."""
-        initial_conversation_item = {
-            "type": "conversation.item.create",
-            "item": {
-                "type": "message",
-                "role": "user",
-                "content": [
-                    {
-                        "type": "input_text",
-                        "text":"you are the master"
-                        # "text": """
-                        # "אתה עוזר קולי הפועל בשם ערן ציפל, מומחה לשיווק דיגיטלי. זוהי שיחת יוזמה שאנחנו מבצעים. 
-                        # התחל בהצגה עצמית קצרה: 'שלום, מדבר ערן ציפל, מומחה לשיווק דיגיטלי. האם זה זמן נוח לשיחה קצרה?'
-                        # אם הם אומרים שלא, הצע לחזור בזמן אחר ושאל מתי יהיה נוח. אם הם מסכימים לשוחח, הצג את השירותים שאתה מציע:
-                        # אסטרטגיה שיווקית לעסקים
-                        # ניהול תוכן לרשתות חברתיות
-                        # סרטוני וידאו שיווקיים
-                        # קמפיינים ממומנים
-                        # עיצוב גרפי
-                        # בניית אתרים ודפי נחיתה
-                        # אוטומציות שיווק ודוא״ל
-                        # כתיבת תוכן שיווקי
-                        # אם יש עניין, שאל: מה התחום של העסק שלך? במה היית רוצה עזרה? האם עבדת בעבר עם משווק דיגיטלי?
-                        # אם יש עניין ממשי, אמור: 'מעולה, אני רוצה לשמוע עוד על העסק שלך ואיך אני יכול לעזור. אצטרך כמה פרטים:' 
-                        # שם מלא
-                        # מספר טלפון להמשך שיחה
-                        # דוא״ל
-                        # תחום העסק ונושא הפנייה
-                        # זמן מועדף לשיחת המשך מעמיקה יותר
-                        # הנחיה חשובה: אם הפונה שואל שאלה שאינה רלוונטית, השב: 'אין לי תשובה מלאה לשאלה זו כרגע, אך אשמח לחזור אליך עם מידע מפורט בשיחה הבאה.'
-                        # הקפד לנהל שיחה אנושית, זורמת, ומתחשבת ככל האפשר. בסיום השיחה, הודה להם על זמנם והדגש שתחזור אליהם בקרוב עם מידע נוסף."
-                        # """
-                    }
-                ]
+    if call_sid:
+        call, created = Call.objects.get_or_create(
+            call_sid=call_sid,
+            defaults={
+                "phone_number": phone_number,
+                "caller_id": caller_id,
+                "status": call_status,
+                "direction": "out"
             }
-        }
-        await self.openai_ws.send(json.dumps(initial_conversation_item))
-        await self.openai_ws.send(json.dumps({"type": "response.create"}))
-        
-        
-        
+        )
+        if not created:
+            # Update the existing record
+            call.status = call_status
+            if phone_number and len(phone_number) > 3:
+                call.phone_number = phone_number
+            if caller_id and len(caller_id) > 3:
+                call.caller_id = caller_id
+            call.save()
+            
+        # Add to cache with just the call_sid as the key
+        cache_key = call_sid
+        cache._cache[cache_key] = call_sid
+        # Update batch status in cache
+        if batch_id:
+            batch_status = cache.get(batch_id)
+            if batch_status:
+                if call_status in ["completed", "failed"]:
+                    batch_status["completed"] += 1
+                    cache.set(batch_id, batch_status)
+        # Log or store the call status as needed
+        logger.info(f"Call {call_sid} status updated to: {call_status}")
+    
+    # You might want to store this in a database or trigger further actions
+    
+    return HttpResponse(status=200)
+
         
 @require_http_methods(["GET"])
 def get_calls(request):
@@ -670,3 +721,99 @@ def initiate_outbound_call(request):
         
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+    
+@csrf_exempt
+@require_http_methods(["POST"])
+def bulk_calls(request):
+    """Handle bulk calls from a CSV file."""
+    if request.method == 'POST':
+        csv_file = request.FILES.get('file')
+        if not csv_file:
+            return JsonResponse({"error": "No file provided"}, status=400)
+
+        try:
+            # Read the CSV file using pandas with UTF-8 encoding
+            df = pd.read_excel(csv_file)
+            
+            # Check for required columns
+            if 'שם' not in df.columns or 'טלפון' not in df.columns:
+                return JsonResponse({
+                    "message": "CSV must contain 'name' and 'phone number' columns"
+                }, status=400)
+
+            # Count total calls to be made
+            total_calls = len(df)
+            job_id = str(uuid.uuid4())  # Generate a unique job ID
+
+            # Process the file in chunks of 4 calls at a time
+            for i in range(0, len(df), 1):
+                chunk = df.iloc[i:i + 1]
+                calls_data = []
+                batch_id = str(uuid.uuid4())  # Unique ID for this batch
+                for _, row in chunk.iterrows():
+                    calls_data.append({
+                        "name": str(row['שם']),
+                        "phone_number": "+972" + str(int(row['טלפון'])),
+                        "batch_id": batch_id
+                    })
+
+                # Save batch to cache or database
+                cache.set(batch_id, {"calls": calls_data, "completed": 0, "total": len(calls_data)})
+
+                # Make calls for the current batch of 4
+                make_bulk_outbound_calls(calls_data)
+
+                # Wait for the batch to complete
+                while True:
+                    batch_status = cache.get(batch_id)
+                    if batch_status and batch_status["completed"] == batch_status["total"]:
+                        break
+                    time.sleep(2)  # Check every 2 seconds
+
+            return JsonResponse({
+                "success": True,
+                "message": "File uploaded successfully",
+                "job_id": job_id,
+                "total_calls": total_calls
+            })
+        
+        except pd.errors.EmptyDataError:
+            return JsonResponse({
+                "message": "The uploaded file is empty"
+            }, status=400)
+        except Exception as e:
+            return JsonResponse({
+                "message": f"Error processing file: {str(e)}"
+            }, status=500)
+
+
+
+def make_bulk_outbound_calls(calls_data):
+    """
+    Helper function to handle 10 outbound calls at the same time.
+    """
+    for call in calls_data:
+        try:
+            # host = 'crest-richards-survivor-miller.trycloudflare.com'
+            host = 'web-production-7204.up.railway.app'
+            # Create the TwiML for the outbound call
+            response = VoiceResponse()
+            connect = Connect()
+            print(call['batch_id'])
+            connect.stream(url=f'wss://{host}/media-stream/?batch_id={call["batch_id"]}')
+            response.append(connect)
+            print("TwiML being sent to Twilio:", str(response))
+            twilio_call = twilio_client.calls.create(
+                to=call['phone_number'],
+                from_=TWILIO_PHONE_NUMBER_NEW,
+                twiml=str(response),
+                status_callback = f'https://{host}/call-status-outbound/?batch_id={call["batch_id"]}',
+                status_callback_event=['initiated', 'ringing', 'in-progress', 'completed'],
+                status_callback_method='POST'
+            )
+            # Save the call_sid for later use
+            call['call_sid'] = twilio_call.sid
+            
+            logger.info(f"Call initiated to {call['name']} at {call['phone_number']}")
+        except Exception as e:
+            logger.error(f"Failed to initiate call to {call['name']} at {call['phone_number']}: {e}")

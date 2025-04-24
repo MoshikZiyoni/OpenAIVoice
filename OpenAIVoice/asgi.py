@@ -43,7 +43,7 @@ application = ProtocolTypeRouter({
     "http": django_asgi_app,
     "websocket": AuthMiddlewareStack(
         URLRouter([
-            re_path(r'media-stream', MediaStreamConsumer.as_asgi()),
-        ])
+            re_path(r'^media-stream/?$', MediaStreamConsumer.as_asgi()),        
+            ])
     ),
 })
