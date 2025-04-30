@@ -6,6 +6,7 @@ class Call(models.Model):
         ('in_progress', 'In Progress'),
         ('completed', 'Completed'),
         ('failed', 'Failed'),
+        ('busy', 'Busy'),
     ]
     
     phone_number = models.CharField(max_length=20)
@@ -17,6 +18,7 @@ class Call(models.Model):
     total_duration = models.FloatField(default=0)  # Total duration of the call in seconds
     conversation = models.JSONField(default=list)  # Store conversation as JSON
     direction = models.CharField(max_length=10, choices=(("in", "In"), ("out", "Out")))
+    conclusion = models.JSONField(default=list,null=True) 
 
     def add_conversation_turn(self, text, is_ai, duration=None):
         """

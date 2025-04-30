@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
+import logging
 import os
 from pathlib import Path
 from dotenv import load_dotenv
@@ -214,23 +215,41 @@ CACHES = {
     }
 }
 
+
+class ExcludePromptsFilter(logging.Filter):
+    def filter(self, record):
+        # Exclude logs containing sensitive prompts
+        return "Speak in Hebrew" not in record.getMessage()
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
+    'filters': {
+        'exclude_prompts': {
+            '()': ExcludePromptsFilter,
+        },
+    },
     'handlers': {
         'console': {
+            'level': 'DEBUG',  # Ensure the console handler logs debug messages
             'class': 'logging.StreamHandler',
+            'filters': ['exclude_prompts'],  # Apply the filter here
         },
     },
     'loggers': {
         'django': {
             'handlers': ['console'],
-            'level': 'INFO',  # Log INFO and above (INFO, WARNING, ERROR, CRITICAL)
+            'level': 'INFO',  # Keep INFO level for Django logs
             'propagate': True,
         },
-        'callAPI': {  # Replace 'your_app_name' with the name of your app
+        'twilio': {
             'handlers': ['console'],
-            'level': 'INFO',  # Log INFO and above
+            'level': 'WARNING',
+            'propagate': False,
+        },
+        'callAPI': {
+            'handlers': ['console'],
+            'level': 'DEBUG',  # Change to DEBUG to include debug logs
             'propagate': False,
         },
     },

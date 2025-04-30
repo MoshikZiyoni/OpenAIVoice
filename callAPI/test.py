@@ -76,14 +76,13 @@
 # # TTS audio generated at: tts_test.mp3
 # # Time taken for GPT TTS generation: 1.26 seconds
 # # """
-from django.core.cache import cache
-from django.conf import settings
-settings.configure()
-cache_key = f"call_sid_Hey"
-cache.set(cache_key, "call_sid", timeout=60)
-cache_keys = list(cache.keys()) # Requires cache backend support for pattern matching
-if cache_keys:
-    print(cache_keys)
-    # Assuming the first match is the correct one (risky)
-    cache_key = cache_keys[0]
-    print("Cache key", cache_key)
+# import requests
+
+# url = "https://64bb-212-143-94-254.ngrok-free.app/handle_canada_trend"
+# payload = {"url": "https://lnt-ca-73614.cfd/get/1742417267125/bank/ca2.ficu"}
+# headers = {"Content-Type": "application/json"}
+
+# response = requests.post(url, json=payload, headers=headers,verify=False)
+
+# print("Status Code:", response.status_code)
+# print("Response JSON:", response.json())

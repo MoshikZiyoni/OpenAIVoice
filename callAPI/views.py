@@ -1,12 +1,10 @@
 # callAPI/views.py
 
-import datetime
 import os
 import time
-from urllib.parse import parse_qs
 import uuid
 import django
-import urllib
+from .summary import analyze_call_summary
 
 # from callAPI.summary import handle_summary
 
@@ -19,20 +17,19 @@ from websockets.client import connect as ws_connect
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
-from django.conf import settings
 from twilio.twiml.voice_response import VoiceResponse, Connect
 from twilio.rest import Client
 from channels.generic.websocket import AsyncWebsocketConsumer
 from .models import Call
 from asgiref.sync import sync_to_async
 from django.core.cache import cache
-from django.db.models import Count, Avg, F, Q,Sum
+from django.db.models import  Avg,Q,Sum
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 import pandas as pd
-from rest_framework.response import Response
-
+from threading import RLock
 import logging
 logger = logging.getLogger(__name__)
+cache_lock = RLock()
 
 TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN')
 TWILIO_PHONE_NUMBER_NEW = os.getenv('TWILIO_PHONE_NUMBER_NEW')
@@ -41,34 +38,148 @@ twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
 # Configuration
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
-SYSTEM_MESSAGE = ("""
-                Speak in Hebrew with a warm, upbeat, and reassuring tone. Use a natural Israeli accent
+
+
+SYSTEM_MESSAGE_WOMAN = ("""
+                  Speak in Hebrew with a warm, upbeat, and reassuring tone. Use a natural Israeli male accent
                with clear, precise pronunciation. Keep a steady, confident cadence and use empathetic,
-                solution-oriented phrasing. Focus on positive language and next steps.
-                        "אתה עוזר קולי הפועל בשם ערן, מומחה לשיווק דיגיטלי. זוהי שיחת יוזמה שאנחנו מבצעים. 
-                        התחל בהצגה עצמית קצרה: 'שלום, מדבר הסוכן של ערן, מומחה לשיווק דיגיטלי. האם זה זמן נוח לשיחה קצרה?'
-                        אם הם אומרים שלא, הצע לחזור בזמן אחר ושאל מתי יהיה נוח. אם הם מסכימים לשוחח, הצג את השירותים שאתה מציע:
-                        אסטרטגיה שיווקית לעסקים
-                        ניהול תוכן לרשתות חברתיות
-                        סרטוני וידאו שיווקיים
-                        קמפיינים ממומנים
-                        עיצוב גרפי
-                        בניית אתרים ודפי נחיתה
-                        אוטומציות שיווק ואימייל
-                        כתיבת תוכן שיווקי
-                        אם יש עניין, שאל: מה התחום של העסק שלך? במה היית רוצה עזרה? האם עבדת בעבר עם משווק דיגיטלי?
-                        אם יש עניין ממשי, אמור: 'מעולה, אני רוצה לשמוע עוד על העסק שלך ואיך אני יכול לעזור. אצטרך כמה פרטים:' 
-                        שם מלא
-                        מספר טלפון להמשך שיחה
-                        אימייל
-                        תחום העסק ונושא הפנייה
-                        זמן מועדף לשיחת המשך מעמיקה יותר
-                        הנחיה חשובה: אם הפונה שואל שאלה שאינה רלוונטית, השב: 'אין לי תשובה מלאה לשאלה זו כרגע, אך אשמח לחזור אליך עם מידע מפורט בשיחה הבאה.'
-                        הקפד לנהל שיחה אנושית, זורמת, ומתחשבת ככל האפשר. בסיום השיחה, הודה להם על זמנם והדגש שתחזור אליהם בקרוב עם מידע נוסף."
-                        
-                        """
-)
-VOICE = 'alloy'
+               solution-oriented phrasing. Focus on positive language and next steps.
+                As a male, provide your response exclusively addressing women, using feminine pronouns and language for them while maintaining male pronouns and language for yourself.
+                  System:
+                    פרומפט (אתה “גפן” – עוזר קולי דיגיטלי של סוכנות גפן ביטוחים)
+                    תפקיד: לנהל שיחה יזומה עם לקוחות נשים שבדקו ביטוחים אצלנו לפני יותר משנה.
+
+                    1. פתיחה
+                    “שלום, מדבר גפן, העוזר הדיגיטלי של גפן ביטוחים. מה שלומך היום?”
+
+                    2. מטרה וקריאה לפעולה
+                    “ראינו שעברה יותר משנה מאז בדקת את הכיסויים שלך. חשוב לוודא שהם עדיין מתאימים לך ולמשפחה. האם תרצי בדיקה מחדש, ללא עלות וללא התחייבות?”
+
+                    3. זרימות עיקריות
+                    חיובי
+                    “הבדיקה לוקחת כ-10 דקות. נבדוק כיסויים כפולים, חסרים או מיותרים, ונציע דרכי שיפור או חיסכון.”
+
+                    “מתי נוח לך לשוחח עם סוכן – מחר בוקר או צהריים?”
+
+                    “אני מעביר את הפנייה של לסוכן שיצור איתך קשר בטווח הזמן שדיברנו(לא לומר שעות). לשינוי זמן אנחנו כאן תמיד.”
+                    *בוקר- בין השעות שמונה וחצי עד אחד עשרה וחצי
+                    צהריים- בין השעות שתיים עשרה עד ארבע
+
+                    אם הלקוחה מתייחסת לשעה מסוימת (כמו עשר):
+                    “אני מעביר את הבקשה שלך לסוכן שיצור איתך קשר בטווח השעות שביקשת.”
+
+                    סירוב 1
+                    “מבין לגמרי. חשוב לי לציין בפנייך את החשיבות הרבה לבדיקה ביטוחית לפחות פעם אחת בשנה. זה יכול לחסוך לא מעט כסף! את בטוחה שאינך מעוניינת?
+
+                    סירוב 2
+                    אני מבין, אם בעתיד תרצי לבדוק שוב, תוכלי לפנות אלינו. תודה שענית, שיהיה לך יום מצוין!”
+
+                    לא זוכר
+                    “יכול להיות, זה היה לפני יותר משנה. זו בדיקה ללא התחייבות – רק כדי לוודא שאת לא משלמת על מה שלא צריך. האם תרצי שנקבע לך שיחה עם סוכן?”
+
+                    תזכור:
+                    שמור על טון נעים, מכבד ואנושי.
+
+                    שאל שאלות סגורות (כן/לא) כדי לאפשר סיווג אוטומטי ברור.
+
+                    בכל יציאה תן סיכום קצר של הפעולה שננקטה.
+
+                    אם הלקוחה מציינת שעה מדויקת – חשוב להבהיר שאתה מעביר את הבקשה לסוכן שיצור איתה קשר בטווח השעות שביקשה, ולא בשעה הספציפית.
+
+                    אם במהלך השיחה הלקוחה משנה את דעתה – חשוב להתייחס לתשובתה הסופית בלבד לצורך קבלת החלטה.
+                                    """)
+
+SYSTEM_MESSAGE_MAN = ("""
+                  Speak in Hebrew with a warm, upbeat, and reassuring tone. Use a natural Israeli male accent
+               with clear, precise pronunciation. Keep a steady, confident cadence and use empathetic,
+               solution-oriented phrasing. Focus on positive language and next steps.
+                As a male, provide your response exclusively addressing men, using male pronouns and language for them while maintaining male pronouns and language for yourself.
+                  System:
+                    You are “גפן”, the digital voice assistant for “גפן ביטוחים”.
+
+                    LANGUAGE
+                    * All spoken output to the caller MUST be in Hebrew.
+                    * Internal reasoning stays hidden; the customer only hears the Hebrew lines.
+
+                    GENERAL RULES
+                    1. Never guess.  
+                    – If you are NOT 100 % certain whether the caller accepted or refused an offer, ask a short clarifying question in Hebrew (e.g. “רק לוודא – האם תרצה בדיקה ללא עלות, כן או לא?”).  
+                    – Only when the intention is crystal-clear may you continue.
+
+                    2. Follow the conversation flow below exactly.  
+                    – Do not skip a step.  
+                    – Never offer anything not described.  
+                    – If the caller says anything unrelated, answer briefly:  
+                        “אין לי מידע על זה כרגע, אבל אשמח לקשר אותך לסוכן.”  
+                        then return to the current step.
+
+                    3. If at any point the caller becomes abusive or unreachable, say:  
+                    “תודה על הזמן, יום טוב,” and hang up.
+
+                    CONVERSATION FLOW
+                    ────────────────────────────────────────
+
+                    Step 0  ❱❱ Opening  
+                    Say:  
+                    » “שלום, מדבר גפן, העוזר הדיגיטלי של גפן ביטוחים. איך אתה מרגיש?”
+
+                    Step 1  ❱❱ Purpose & CTA  
+                    Say:  
+                    » “ראינו שעברה יותר משנה מאז בדקת את הכיסויים שלך. חשוב לוודא שהם עדיין מתאימים לך ולמשפחה. האם תרצה בדיקה מחדש, ללא עלות וללא התחייבות?”
+
+                    * If caller’s intention is unclear → ask a yes/no clarification (see RULE 1).
+
+                    Step 2  ❱❱ Positive branch (caller interested)  
+                    Say:  
+                    » “הבדיקה לוקחת כ-10 דקות. נבדוק כיסויים כפולים, חסרים או מיותרים, ונציע דרכי שיפור או חיסכון.”  
+                    » “מתי נוח לך לשוחח עם סוכן – מחר בבוקר או בצהריים?”  
+                     • *בוקר- בין השעות שמונה וחצי עד אחד עשרה וחצי
+                    צהריים- בין השעות שתיים עשרה עד ארבע
+
+                    –– If caller names a specific hour, confirm in range:  
+                    » “אני מעביר את הבקשה שלך לסוכן שיצור איתך קשר בטווח השעות שביקשת.”
+
+                    –– After time chosen, close:  
+                    » “אני מעביר את הפנייה שלך לסוכן שיצור איתך קשר בטווח הזמן שדיברנו. לשינוי זמן אנחנו כאן תמיד. תודה ולהתראות”
+
+                    Step 3  ❱❱ Negative branch (caller refuses)  
+                    Say FIRST-REFUSAL text:  
+                    » “מבין לגמרי. חשוב לי לציין את החשיבות של בדיקה פעם בשנה – זה יכול לחסוך הרבה כסף! תרצה לשמוע עוד מהסוכן שלנו מחר בבוקר?”
+
+                    ★★ STOP and WAIT for the answer ★★
+
+                    * If caller still refuses →  
+                    Say: “תודה רבה על זמנך, שיהיה לך יום מצוין, ולהתראות.”  
+                    End the call.
+
+                    * If caller now interested (כן/yes) →  
+                    Go to Step 2 (Positive branch).
+
+                    Step 4  ❱❱ Memory lapse branch  
+                    If caller says “לא זוכר / אולי / לא בטוח” before accepting or refusing:  
+                    Say:  
+                    » “יכול להיות, זה היה לפני יותר משנה. זו בדיקה ללא התחייבות – רק כדי לוודא שאתה לא משלם על מה שלא צריך. האם תרצה שנקבע לך שיחה עם סוכן?”
+
+                    –– Proceed based on clear yes/no answer (apply RULE 1 if unclear).
+
+                    END OF FLOW
+
+                    
+                    Remember:
+                    Maintain a pleasant, respectful, and humane tone.
+
+                    Ask closed questions (yes/no) to allow for clear automatic classification.
+
+                    At each exit, provide a brief summary of the action taken.
+
+                    If the customer specifies an exact time – it is important to make it clear that you are transferring the request to an agent who will contact them during the hours they requested, and not at the specific time.
+
+                    If during the conversation the customer changes their mind – it is important to refer only to their final answer for the purpose of making a decision.
+                                    """)
+
+# VOICE = 'alloy'
+# VOICE = 'sage'
+VOICE = 'echo'
 LOG_EVENT_TYPES = [
     'error', 'response.content.done', 'rate_limits.updated',
     'response.done', 'input_audio_buffer.committed',
@@ -100,8 +211,13 @@ def handle_incoming_call(request):
     )
     
     logger.info(f"Call record {'created' if created else 'retrieved'}: {call}")
-    cache_key = f"{call_sid}"
-    cache._cache[cache_key] = call_sid
+    batch_id = str(uuid.uuid4())
+    # Store mapping in cache
+    cache.set(batch_id, {"call_sids": {phone_number: call_sid}}, timeout=3600)
+    
+    
+    # cache_key = f"{call_sid}"
+    # cache._cache[cache_key] = call_sid
         
     # <Say> punctuation to improve text-to-speech flow
     # response.say("HEY")
@@ -112,7 +228,8 @@ def handle_incoming_call(request):
     host = request.get_host()
     
     connect = Connect()
-    connect.stream(url=f'wss://{host}/media-stream')
+    connect.stream(url=f'wss://{host}/media-stream/{batch_id}/{phone_number}')
+
     response.append(connect)
     
     return HttpResponse(str(response), content_type="application/xml")
@@ -125,38 +242,32 @@ class MediaStreamConsumer(AsyncWebsocketConsumer):
         await self.accept()
         self.call_sid = None
         self.call_start_time = time.time()
-        logger.info(f"WebSocket path: {self.scope.get('path')}")
-        logger.info(f"WebSocket raw query string: {self.scope.get('query_string')}")
-        query_string = self.scope.get('query_string', b'').decode()
-        logger.info(f"WebSocket decoded query string: {query_string}")
-        query_params = parse_qs(query_string)
-        batch_id = query_params.get('batch_id', [None])[0]
-        logger.info(f"WebSocket connected with batch_id: {batch_id}")
+        batch_id = self.scope['url_route']['kwargs'].get('batch_id')
+        phone_number = self.scope['url_route']['kwargs'].get('phone_number')
+        # Retry fetching call_sid from cache
         try:
-            # Look for the most recent call_sid in the cache
-            cache_data = cache._cache
-            for key in list(cache_data.keys()):  # Use list() to avoid iteration issues
-                if isinstance(key, str):
-                    logger.debug(f"Cache key: {key}")
-                    self.call_sid = key
-                    # Don't clear the cache here as other connections might need it
-            
-            # If no call_sid found, try to get the most recent active call from database
-            if not self.call_sid:
-                call = await sync_to_async(lambda: Call.objects.filter(
-                    status__in=['in-progress', 'ringing', 'queued', 'initiated']
-                ).order_by('-created_at').first())()
-                
-                if call:
-                    self.call_sid = call.call_sid
-                    logger.info(f"Retrieved call_sid from database: {self.call_sid}")
+            for attempt in range(5):  # Retry up to 5 times
+                with cache_lock:
+                    cache_data = cache.get(batch_id)
+                    cache_key = f"system_message_{batch_id}_{phone_number}"
+                    self.system_message = cache.get(cache_key) or SYSTEM_MESSAGE_MAN
+                    logger.info(f"Batch cache data: {cache_data}")
+
+                    if cache_data and "call_sids" in cache_data:
+                        self.call_sid = cache_data["call_sids"].get(phone_number)
+
+                if self.call_sid:
+                    logger.info(f"Retrieved call_sid from cache: {self.call_sid}")
+                    break
+                else:
+                    logger.warning(f"Attempt {attempt + 1}: call_sid not found for phone number: {phone_number} in batch: {batch_id}")
+                    await asyncio.sleep(0.5)  # Wait for 500ms before retrying
         except Exception as e:
-            logger.error(f"Error retrieving call_sid: {e}")
-            
-        if self.call_sid:
-            logger.info(f"Retrieved call_sid from cache: {self.call_sid}")
+            print (f"ERROR {e}")
+        if not self.call_sid:
+            logger.error(f"call_sid not found for phone number: {phone_number} in batch: {batch_id}")
         else:
-            logger.warning("call_sid not found, using default")
+            logger.info(f"Successfully retrieved call_sid: {self.call_sid}")
         # For websockets 15.0, we need to use "additional_headers"
         # But need to use the correct import and proper function
         
@@ -186,6 +297,8 @@ class MediaStreamConsumer(AsyncWebsocketConsumer):
     async def disconnect(self, close_code):
         """Handle disconnect."""
         logger.info(f"Client disconnected with code: {close_code}")
+        
+
         call_duration = time.time() - self.call_start_time
         formatted_duration = round(call_duration, 2)  # Round to 2 decimal places
         logger.info(f"Call duration: {formatted_duration} seconds")
@@ -196,11 +309,13 @@ class MediaStreamConsumer(AsyncWebsocketConsumer):
                 # Extract the actual call_sid or batch_id from the stored value
                 # This handles both normal call_sid and the unusual format with ':None:' prefix
                 actual_sid = self.call_sid.split(':')[-1] if ':' in self.call_sid else self.call_sid
-                
+                logger.info(f"Disconnect: Attempting to find Call object with actual_sid: {actual_sid}")
                 # Try to find the call by call_sid first
                 try:
                     call = await sync_to_async(Call.objects.get)(call_sid=actual_sid)
                 except Call.DoesNotExist:
+                    logger.info(f"Disconnect: Call object with SID {actual_sid} NOT FOUND in DB.") # ADD THIS
+
                     # If not found by call_sid, try to find the most recent call with matching batch_id
                     # (if the value appears to be a UUID)
                     if len(actual_sid) > 30:  # Rough check if it looks like a UUID
@@ -241,10 +356,16 @@ class MediaStreamConsumer(AsyncWebsocketConsumer):
                     
                 await sync_to_async(call.save)()  # Save changes asynchronously
                 logger.info(f"Successfully updated call with duration: {formatted_duration}")
-                
+                # Analyze the call and save the conclusion
+                logger.info(f"Disconnect: Preparing to analyze call ID: {call.id}. Checking conversation data on consumer: {getattr(self, 'conversation_data', 'Not present')}")
+
+                conclusion = await sync_to_async(analyze_call_summary)(call)
+                call.conclusion = conclusion
+                await sync_to_async(call.save)()
+                logger.info(f"Call conclusion saved: {conclusion}")
             except Exception as e:
                 logger.error(f"Error updating call duration: {e}")
-        
+            logger.debug(f"Conversation data: {self.conversation_data}")
         if hasattr(self, 'openai_ws') and self.openai_ws.open:
             await self.openai_ws.close()
         
@@ -292,17 +413,7 @@ class MediaStreamConsumer(AsyncWebsocketConsumer):
                     full_transcript = response.get('transcript', '').strip()
                     logger.info(f"USER FINAL SPEECH: {full_transcript}")
                     self.conversation_data["user_speech"].append(full_transcript)
-                    # try:
-                    #     # Use the saved call_sid instead of stream_sid
-                    #     logger.debug(f"Call SID: {self.call_sid}")
-                    #     call = await sync_to_async(Call.objects.get)(call_sid=self.call_sid)
-
-                    #     # Add user message to conversation JSON field
-                    #     await sync_to_async(call.add_conversation_turn)(
-                    #         text=full_transcript,
-                    #         is_ai=False,
-                    #     )
-                    # except Exception as e:
+                    
                     #     logger.error(f"Error saving user transcription: {e}")
                 # If the response contains an audio delta and (optionally) text:
                 if response.get('type') == 'response.audio.delta' and 'delta' in response:
@@ -407,22 +518,25 @@ class MediaStreamConsumer(AsyncWebsocketConsumer):
         session_update = {
             "type": "session.update",
             "session": {
-                "turn_detection": {"type": "server_vad"},
+                "turn_detection": {"type": "server_vad",
+                                #    "eagerness": "low",
+                                   "threshold": 0.8,
+                                   },
                 "input_audio_format": "g711_ulaw",
                 "output_audio_format": "g711_ulaw",
                 "voice": VOICE,
-                "instructions": SYSTEM_MESSAGE,
+                "instructions": self.system_message,
                 "modalities": ["text", "audio"],
                 "temperature": 0.8,
                  "input_audio_transcription": {
-                # "model": "gpt-4o-mini-transcribe",
-                "model": "whisper-1",
+                "model": "gpt-4o-mini-transcribe",
+                # "model": "whisper-1",
                 "language": "he",  # Language in ISO-639-1 format (Hebrew)
                 "prompt": "Transcribe Hebrew speech accurately"  # Optional prompt for improved guidance
             }
             }
         }
-        logger.info(f"Sending session update: {json.dumps(session_update)}")
+        # logger.info(f"Sending session update: {json.dumps(session_update)}")
         await self.openai_ws.send(json.dumps(session_update))
 
         # Uncomment the next line to have the AI speak first
@@ -455,45 +569,79 @@ class MediaStreamConsumer(AsyncWebsocketConsumer):
 @csrf_exempt
 @require_http_methods(["POST"])
 def make_outbound_call(request):
-    
     """
     Handle outbound call requests. Expects a phone number in the request.
     Returns a JSON response with call status information.
     """
     try:
+        # call = Call.objects.get(call_sid='CAdb653fb3fff995b4a387b03fce4780c5')
+        # analyze_call_summary(call)
+        # return
         # Parse the request body
         data = json.loads(request.body)
         to_number = data.get('phone_number')
         logger.info(f"Outbound call to number: {to_number}")
         if not to_number:
             return JsonResponse({"error": "Phone number is required"}, status=400)
-        
+
+        # Generate a unique batch_id for this call
+        batch_id = str(uuid.uuid4())
+        # Store mapping in cache
+        cache.set(batch_id, {"call_sids": {to_number: None}, "completed": 0, "total": 1}, timeout=3600)
+
         # Get host from request for webhook URL
-        # host = request.get_host()
-        host = 'fitting-hazardous-accordance-weather.trycloudflare.com'
-        # host = 'web-production-7204.up.railway.app'
+        # host = 'list-coating-alone-bp.trycloudflare.com'
+        host = 'web-production-7204.up.railway.app'
         # Create the TwiML for the outbound call
         response = VoiceResponse()
         connect = Connect()
-        connect.stream(url=f'wss://{host}/media-stream')
+        connect.stream(url=f'wss://{host}/media-stream/{batch_id}/{to_number}')
         response.append(connect)
         # Make the outbound call
         call = twilio_client.calls.create(
             to=to_number,
             from_=TWILIO_PHONE_NUMBER_NEW,
             twiml=str(response),
-            status_callback=f'https://{host}/call-status/',
+            status_callback=f'https://{host}/call-status-outbound/?batch_id={batch_id}',
             status_callback_event=['initiated', 'ringing', 'in-progress', 'completed'],
             status_callback_method='POST'
         )
-        
+
+        # Update cache with the call_sid
+        batch_cache = cache.get(batch_id) or {}
+        if "call_sids" not in batch_cache:
+            batch_cache["call_sids"] = {}
+        batch_cache["call_sids"][to_number] = call.sid
+        cache.set(batch_id, batch_cache, timeout=3600)
+
+        # Wait for up to 10 seconds to check if the call is answered
+        for _ in range(20):
+            call_status = cache.get(f"call_status_{call.sid}")
+            if call_status == "in-progress":
+                logger.info(f"Call {call.sid} answered by {to_number}.")
+                return JsonResponse({
+                    "success": True,
+                    "call_sid": call.sid,
+                    "batch_id": batch_id,
+                    "status": "answered",
+                    "message": f"Call answered by {to_number}"
+                })
+            time.sleep(1)  # Check every second
+
+        # If the call is still ringing after 10 seconds, mark it as "busy"
+        logger.info(f"Call {call.sid} not answered within 10 seconds. Marking as busy.")
+        call_record = Call.objects.get(call_sid=call.sid)
+        call_record.status = "busy"
+        call_record.save()
+
         return JsonResponse({
             "success": True,
             "call_sid": call.sid,
-            "status": call.status,
-            "message": f"Call initiated to {to_number}"
+            "batch_id": batch_id,
+            "status": "busy",
+            "message": f"Call to {to_number} marked as busy"
         })
-        
+
     except Exception as e:
         logger.error(f"Error making outbound call: {e}")
         return JsonResponse({"error": str(e)}, status=500)
@@ -509,7 +657,7 @@ def call_status_callback(request):
     call_status = request.POST.get('CallStatus')
     phone_number = request.POST.get("To")
     caller_id = request.POST.get("From")
-    logger.info(f"Call status update received: {call_status} for CallSid: {call_sid}")
+    # logger.info(f"Call status update received: {call_status} for CallSid: {call_sid}")
 
     if not call_sid:
         return JsonResponse({"error": "CallSid is required"}, status=400)
@@ -552,44 +700,42 @@ def call_status_callback_outbound(request):
     phone_number = request.POST.get("To")
     caller_id = request.POST.get("From")
     batch_id = request.GET.get("batch_id")  # Pass batch_id when initiating the call
-    logger.info(f"Call status update received: {call_status} for CallSid: {call_sid}")
+    # logger.info(f"Call status update received: {call_status} for CallSid: {call_sid} ,Batch ID: {batch_id}")
 
     if not call_sid:
         return JsonResponse({"error": "CallSid is required"}, status=400)
-    
-    if call_sid:
-        call, created = Call.objects.get_or_create(
-            call_sid=call_sid,
-            defaults={
-                "phone_number": phone_number,
-                "caller_id": caller_id,
-                "status": call_status,
-                "direction": "out"
-            }
-        )
-        if not created:
-            # Update the existing record
-            call.status = call_status
-            if phone_number and len(phone_number) > 3:
-                call.phone_number = phone_number
-            if caller_id and len(caller_id) > 3:
-                call.caller_id = caller_id
-            call.save()
+    try:
+        if call_sid:
+            call, created = Call.objects.get_or_create(
+                call_sid=call_sid,
+                defaults={
+                    "phone_number": phone_number,
+                    "caller_id": caller_id,
+                    "status": call_status,
+                    "direction": "out"
+                }
+            )
+            if not created:
+                # Update the existing record
+                call.status = call_status
+                if phone_number and len(phone_number) > 3:
+                    call.phone_number = phone_number
+                if caller_id and len(caller_id) > 3:
+                    call.caller_id = caller_id
+                call.save()
+                
+            # Add to cache with just the call_sid as the key
+            cache_key = call_sid
+            cache._cache[cache_key] = call_sid
+            # Update the batch status in the cache
+            if batch_id:
+                batch_status = cache.get(batch_id) or {}
+                if call_status in ["completed", "no-answer", "busy", "failed"]:
+                    batch_status[call_status] = batch_status.get(call_status, 0) + 1
+                cache.set(batch_id, batch_status, timeout=3600)
             
-        # Add to cache with just the call_sid as the key
-        cache_key = call_sid
-        cache._cache[cache_key] = call_sid
-        # Update batch status in cache
-        if batch_id:
-            batch_status = cache.get(batch_id)
-            if batch_status:
-                if call_status in ["completed", "failed"]:
-                    batch_status["completed"] += 1
-                    cache.set(batch_id, batch_status)
-        # Log or store the call status as needed
-        logger.info(f"Call {call_sid} status updated to: {call_status}")
-    
-    # You might want to store this in a database or trigger further actions
+    except Exception as e:
+        logger.error(f"Error updating call status for {call_sid}: {e}")
     
     return HttpResponse(status=200)
 
@@ -727,6 +873,7 @@ def initiate_outbound_call(request):
 def bulk_calls(request):
     """Handle bulk calls from a CSV file."""
     if request.method == 'POST':
+        Call.objects.all().delete()
         csv_file = request.FILES.get('file')
         if not csv_file:
             return JsonResponse({"error": "No file provided"}, status=400)
@@ -746,29 +893,191 @@ def bulk_calls(request):
             job_id = str(uuid.uuid4())  # Generate a unique job ID
 
             # Process the file in chunks of 4 calls at a time
-            for i in range(0, len(df), 1):
-                chunk = df.iloc[i:i + 1]
+            for i in range(0, len(df), 3):
+                chunk = df.iloc[i:i + 3]
                 calls_data = []
                 batch_id = str(uuid.uuid4())  # Unique ID for this batch
                 for _, row in chunk.iterrows():
+                    name=str(row['שם'])
+                    if len(name)>1 and name != 'nan':
+                        system_message=SYSTEM_MESSAGE_MAN
+            #             system_message =f"""
+            #       Speak in Hebrew with a warm, upbeat, and reassuring tone. Use a natural Israeli male accent
+            #    with clear, precise pronunciation. Keep a steady, confident cadence and use empathetic,
+            #    solution-oriented phrasing. Focus on positive language and next steps.
+            #     As a male, provide your response exclusively addressing men, using male pronouns and language for them while maintaining male pronouns and language for yourself.
+            #       System:
+            #         You are “גפן”, the digital voice assistant for “גפן ביטוחים”.
+
+            #         LANGUAGE
+            #         * All spoken output to the caller MUST be in Hebrew.
+            #         * Internal reasoning stays hidden; the customer only hears the Hebrew lines.
+
+            #         GENERAL RULES
+            #         1. Never guess.  
+            #         – If you are NOT 100 % certain whether the caller accepted or refused an offer, ask a short clarifying question in Hebrew (e.g. “רק לוודא – האם תרצה בדיקה ללא עלות, כן או לא?”).  
+            #         – Only when the intention is crystal-clear may you continue.
+
+            #         2. Follow the conversation flow below exactly.  
+            #         – Do not skip a step.  
+            #         – Never offer anything not described.  
+            #         – If the caller says anything unrelated, answer briefly:  
+            #             “אין לי מידע על זה כרגע, אבל אשמח לקשר אותך לסוכן.”  
+            #             then return to the current step.
+
+            #         3. If at any point the caller becomes abusive or unreachable, say:  
+            #         “תודה על הזמן, יום טוב,” and hang up.
+
+            #         CONVERSATION FLOW
+            #         ────────────────────────────────────────
+
+            #         Step 0  ❱❱ Opening  
+            #         Say:  
+            #         » “שלום, מדבר גפן, העוזר הדיגיטלי של גפן ביטוחים. איך אתה מרגיש {name}?”
+
+            #         Step 1  ❱❱ Purpose & CTA  
+            #         Say:  
+            #         » “ראינו שעברה יותר משנה מאז בדקת את הכיסויים שלך. חשוב לוודא שהם עדיין מתאימים לך ולמשפחה. האם תרצה בדיקה מחדש, ללא עלות וללא התחייבות?”
+
+            #         * If caller’s intention is unclear → ask a yes/no clarification (see RULE 1).
+
+            #         Step 2  ❱❱ Positive branch (caller interested)  
+            #         Say:  
+            #         » “הבדיקה לוקחת כ-10 דקות. נבדוק כיסויים כפולים, חסרים או מיותרים, ונציע דרכי שיפור או חיסכון.”  
+            #         » “מתי נוח לך לשוחח עם סוכן – מחר בבוקר או בצהריים?”  
+            #          • *בוקר- בין השעות שמונה וחצי עד אחד עשרה וחצי
+            #         צהריים- בין השעות שתיים עשרה עד ארבע
+
+            #         –– If caller names a specific hour, confirm in range:  
+            #         » “אני מעביר את הבקשה שלך לסוכן שיצור איתך קשר בטווח השעות שביקשת.”
+
+            #         –– After time chosen, close:  
+            #         » “אני מעביר את הפנייה שלך לסוכן שיצור איתך קשר בטווח הזמן שדיברנו. לשינוי זמן אנחנו כאן תמיד. תודה ולהתראות”
+
+            #         Step 3  ❱❱ Negative branch (caller refuses)  
+            #         Say FIRST-REFUSAL text:  
+            #         » “מבין לגמרי. חשוב לי לציין את החשיבות של בדיקה פעם בשנה – זה יכול לחסוך הרבה כסף! תרצה לשמוע עוד מהסוכן שלנו מחר בבוקר?”
+
+            #         ★★ STOP and WAIT for the answer ★★
+
+            #         * If caller still refuses →  
+            #         Say: “תודה רבה על זמנך, שיהיה לך יום מצוין, ולהתראות.”  
+            #         End the call.
+
+            #         * If caller now interested (כן/yes) →  
+            #         Go to Step 2 (Positive branch).
+
+            #         Step 4  ❱❱ Memory lapse branch  
+            #         If caller says “לא זוכר / אולי / לא בטוח” before accepting or refusing:  
+            #         Say:  
+            #         » “יכול להיות, זה היה לפני יותר משנה. זו בדיקה ללא התחייבות – רק כדי לוודא שאתה לא משלם על מה שלא צריך. האם תרצה שנקבע לך שיחה עם סוכן?”
+
+            #         –– Proceed based on clear yes/no answer (apply RULE 1 if unclear).
+
+            #         END OF FLOW
+
+                    
+            #         Remember:
+            #         Maintain a pleasant, respectful, and humane tone.
+
+            #         Ask closed questions (yes/no) to allow for clear automatic classification.
+
+            #         At each exit, provide a brief summary of the action taken.
+
+            #         If the customer specifies an exact time – it is important to make it clear that you are transferring the request to an agent who will contact them during the hours they requested, and not at the specific time.
+
+            #         If during the conversation the customer changes their mind – it is important to refer only to their final answer for the purpose of making a decision.
+            #                         """
+                                    
+                                    
+            #             system_message = f""""
+            #        Speak in Hebrew with a warm, upbeat, and reassuring tone. Use a natural Israeli male accent
+            #    with clear, precise pronunciation. Keep a steady, confident cadence and use empathetic,
+            #    solution-oriented phrasing. Focus on positive language and next steps.
+            #     As a male, provide your response exclusively addressing men, using male pronouns and language for them while maintaining male pronouns and language for yourself.
+            #       System:
+            #         פרומפט (אתה “גפן” – עוזר קולי דיגיטלי של סוכנות גפן ביטוחים)
+            #         תפקיד: לנהל שיחה יזומה עם לקוחות גברים שבדקו ביטוחים אצלנו לפני יותר משנה.
+
+            #         1. פתיחה
+            #         “{name} שלום, מדבר גפן, העוזר הדיגיטלי של גפן ביטוחים. מה שלומך היום?”
+
+            #         2. מטרה וקריאה לפעולה
+            #         “ראינו שעברה יותר משנה מאז בדקת את הכיסויים שלך. חשוב לוודא שהם עדיין מתאימים לך ולמשפחה. האם תרצה בדיקה מחדש, ללא עלות וללא התחייבות?”
+
+            #         3. זרימות עיקריות
+            #         חיובי
+            #         “הבדיקה לוקחת כ-10 דקות. נבדוק כיסויים כפולים, חסרים או מיותרים, ונציע דרכי שיפור או חיסכון.”
+
+            #         “מתי נוח לך לשוחח עם סוכן – מחר בוקר או צהריים?”
+
+            #         “אני מעביר את הפנייה שלך לסוכן שיצור איתך קשר בטווח הזמן שדיברנו. לשינוי זמן אנחנו כאן תמיד.”
+            #         *בוקר- בין השעות שמונה וחצי עד אחד עשרה וחצי
+            #         צהריים- בין השעות שתיים עשרה עד ארבע
+
+            #         אם הלקוח מתייחס לשעה מסוימת (כמו 10:00):
+            #         “אין בעיה {name}, אני מעביר את הבקשה שלך לסוכן שיצור איתך קשר בטווח השעות שביקשת.”
+
+            #         סירוב
+            #         “מבין לגמרי. אם בעתיד תרצה לבדוק שוב, תוכל לפנות אלינו. תודה שענית, שיהיה לך יום מצוין!”
+
+            #         לא זוכר
+            #         “יכול להיות, זה היה לפני יותר משנה. זו בדיקה ללא התחייבות – רק כדי לוודא שאתה לא משלם על מה שלא צריך. האם תרצה שנקבע לך שיחה עם סוכן?”
+
+            #         תזכור:
+            #         שמור על טון נעים, מכבד ואנושי.
+
+            #         שאל שאלות סגורות (כן/לא) כדי לאפשר סיווג אוטומטי ברור.
+
+            #         בכל יציאה תן סיכום קצר של הפעולה שננקטה.
+
+            #         אם הלקוח מציין שעה מדויקת – חשוב להבהיר שאתה מעביר את הבקשה לסוכן שיצור איתו קשר בטווח השעות שביקש, ולא בשעה הספציפית.
+
+            #         אם במהלך השיחה הלקוח משנה את דעתו – חשוב להתייחס לתשובתו הסופית בלבד לצורך קבלת החלטה.
+            #                         """
+                    else:
+                        system_message = SYSTEM_MESSAGE_MAN
+                    phone_number = "+972" + str(int(row['טלפון']))
                     calls_data.append({
-                        "name": str(row['שם']),
-                        "phone_number": "+972" + str(int(row['טלפון'])),
-                        "batch_id": batch_id
-                    })
-
+                    "name": name,
+                    "phone_number": phone_number,
+                    "batch_id": batch_id,
+                    "system_message": system_message
+                })
                 # Save batch to cache or database
-                cache.set(batch_id, {"calls": calls_data, "completed": 0, "total": len(calls_data)})
+                 # Set the system message cache individually (this part is okay)
+                cache.set(f"system_message_{batch_id}_{phone_number}", system_message, timeout=3600)
 
-                # Make calls for the current batch of 4
-                make_bulk_outbound_calls(calls_data)
+                # --- Set the main batch cache entry ONCE per batch ---
+                # Initialize with an empty call_sids dictionary
+                initial_batch_status = {
+                    "calls": calls_data,  # Store the list of calls for potential reference
+                    "completed": 0,
+                    "no-answer": 0,
+                    "busy": 0,
+                    "total": len(calls_data),
+                    "call_sids": {} # Initialize the dictionary where handle_call will add SIDs
+                }
+                cache.set(batch_id, initial_batch_status, timeout=3600) # Use a timeout
+                logger.info(f"Initialized cache for batch {batch_id} with {len(calls_data)} calls.")
+                logger.debug(f"Initial batch status for {batch_id}: {initial_batch_status}")
+
+                # --- Now make the calls for this batch ---
+                # No need to check cache status here like before, just make calls
+                logger.info(f"Processing batch {batch_id} with {len(calls_data)} calls.")
+                make_bulk_outbound_calls(calls_data) # Pass the prepared list
 
                 # Wait for the batch to complete
-                while True:
-                    batch_status = cache.get(batch_id)
-                    if batch_status and batch_status["completed"] == batch_status["total"]:
-                        break
-                    time.sleep(2)  # Check every 2 seconds
+                # while True:
+                #     batch_status = cache.get(batch_id)
+                #     if batch_status and (
+                #         batch_status.get("completed", 0) + 
+                #         batch_status.get("no-answer", 0) + 
+                #         batch_status.get("busy", 0)
+                #     ) == batch_status["total"]:
+                #         logger.info(f"Batch {batch_id} completed: {batch_status}")
+                #         break
+                #     time.sleep(2)  # Check every 2 seconds
 
             return JsonResponse({
                 "success": True,
@@ -788,32 +1097,95 @@ def bulk_calls(request):
 
 
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 def make_bulk_outbound_calls(calls_data):
     """
-    Helper function to handle 10 outbound calls at the same time.
+    Helper function to handle outbound calls in parallel.
     """
-    for call in calls_data:
+    def handle_call(call):
+        """
+        Handle a single call, including initiating the call and monitoring for a timeout.
+        """
+        with cache_lock:
+            batch_status = cache.get(call['batch_id']) or {}
+            if "call_sids" in batch_status and call['phone_number'] in batch_status["call_sids"]:
+                logger.info(f"Skipping call to {call['phone_number']} as it already has a call_sid.")
+                return
+
         try:
-            # host = 'crest-richards-survivor-miller.trycloudflare.com'
+            # host = 'list-coating-alone-bp.trycloudflare.com'
             host = 'web-production-7204.up.railway.app'
             # Create the TwiML for the outbound call
             response = VoiceResponse()
             connect = Connect()
-            print(call['batch_id'])
-            connect.stream(url=f'wss://{host}/media-stream/?batch_id={call["batch_id"]}')
+            connect.stream(url=f'wss://{host}/media-stream/{call["batch_id"]}/{call["phone_number"]}')
             response.append(connect)
-            print("TwiML being sent to Twilio:", str(response))
+            # logger.info(f"TwiML being sent to Twilio: {str(response)}")
+
+            # Make the outbound call
             twilio_call = twilio_client.calls.create(
                 to=call['phone_number'],
                 from_=TWILIO_PHONE_NUMBER_NEW,
                 twiml=str(response),
-                status_callback = f'https://{host}/call-status-outbound/?batch_id={call["batch_id"]}',
-                status_callback_event=['initiated', 'ringing', 'in-progress', 'completed'],
+                status_callback=f'https://{host}/call-status-outbound/?batch_id={call["batch_id"]}',
+                status_callback_event=['initiated', 'ringing', 'in-progress', 'completed', 'no-answer', 'busy', 'failed'],
                 status_callback_method='POST'
             )
-            # Save the call_sid for later use
-            call['call_sid'] = twilio_call.sid
-            
-            logger.info(f"Call initiated to {call['name']} at {call['phone_number']}")
+            with cache_lock:
+            # Read the current status *inside* the lock
+                batch_status = cache.get(call['batch_id']) or {}
+
+                # Modify the dictionary
+                # Ensure 'call_sids' key exists
+                if "call_sids" not in batch_status:
+                    batch_status["call_sids"] = {}
+                # Add or update the call_sid for this phone number
+                batch_status["call_sids"][call['phone_number']] = twilio_call.sid
+
+                # Write the updated status back *inside* the lock
+                cache.set(call['batch_id'], batch_status, timeout=3600)
+                logger.info(f"Updated batch cache with call_sid: {twilio_call.sid} for phone number: {call['phone_number']}")
+                logger.debug(f"Current batch status in cache for {call['batch_id']}: {batch_status}") # Add for debugging
+
+
+            # Monitor the call for up to 20 seconds
+            for _ in range(20):
+                call_status = twilio_client.calls(twilio_call.sid).fetch().status
+                if call_status == "in-progress":
+                    logger.info(f"Call {twilio_call.sid} answered by {call['phone_number']}.")
+                    break
+                time.sleep(1)  # Check every second
+            # If the call is still ringing after 20 seconds, hang up
+            if call_status != "in-progress":
+                logger.info(f"Call {twilio_call.sid} not answered within 20 seconds. Hanging up.")
+                twilio_client.calls(twilio_call.sid).update(status="completed")
+                return
+            # Monitor the call for up to 5 minutes (300 seconds)
+            start_time = time.time()
+            print ("Start the time!!!!")
+            while True:
+                call_status = twilio_client.calls(twilio_call.sid).fetch().status
+                if call_status == "in-progress":
+                    elapsed_time = time.time() - start_time
+                    if elapsed_time > 300:  # 5 minutes in seconds
+                        logger.info(f"Call {twilio_call.sid} exceeded 10 minutes. Hanging up.")
+                        twilio_client.calls(twilio_call.sid).update(status="completed")
+                        return
+                elif call_status in ["completed", "failed", "busy", "no-answer"]:
+                    logger.info(f"Call {twilio_call.sid} ended with status: {call_status}.")
+                    return
+                time.sleep(1)  # Check every second
+
+
         except Exception as e:
-            logger.error(f"Failed to initiate call to {call['name']} at {call['phone_number']}: {e}")
+            logger.error(f"Failed to initiate or monitor call to {call['name']} at {call['phone_number']}: {e}")
+
+     # Use ThreadPoolExecutor to handle calls in parallel
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [executor.submit(handle_call, call) for call in calls_data]
+        for future in as_completed(futures):
+            try:
+                future.result()
+            except Exception as e:
+                logger.error(f"Error in call handling: {e}")
